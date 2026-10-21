@@ -539,6 +539,7 @@ dependencies = [
  "ureq",
  "walkdir",
  "windows",
+ "windows-numerics",
  "windows-sys 0.61.2",
 ]
 

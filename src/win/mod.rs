@@ -1,5 +1,6 @@
-//! The Windows side: the settings dialog, where settings are kept, and the screensaver windows.
+//! The Windows side: the settings dialog, where settings are kept, decoding and drawing the photos.
 
+mod decode;
 pub mod dialog;
 mod folder;
 pub mod saver;

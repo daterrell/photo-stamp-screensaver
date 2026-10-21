@@ -9,6 +9,8 @@ pub enum Mode {
     Settings { parent: Option<isize> },
     /// Draw inside the preview window `parent`.
     Preview { parent: isize },
+    /// The slideshow in an ordinary window that input doesn't close (`/w`): for trying it out.
+    Window,
 }
 
 /// The mode from the arguments after the program name. No arguments (double-clicking the .scr in
@@ -25,6 +27,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Mode {
         inline.or_else(|| args.next()).and_then(|s| s.trim().parse::<isize>().ok()).filter(|&h| h != 0);
     match flag.as_str() {
         "s" => Mode::Run,
+        "w" => Mode::Window,
         "p" | "l" => match hwnd {
             Some(parent) => Mode::Preview { parent },
             None => Mode::Settings { parent: None },
@@ -52,6 +55,7 @@ mod tests {
         assert_eq!(p(&["/C", "4242"]), Mode::Settings { parent: Some(4242) });
         assert_eq!(p(&["/p", "1234"]), Mode::Preview { parent: 1234 });
         assert_eq!(p(&["/P:1234"]), Mode::Preview { parent: 1234 });
+        assert_eq!(p(&["/w"]), Mode::Window);
     }
 
     #[test]

@@ -34,9 +34,15 @@ pub struct Library {
 const MAX_SKIPS: usize = 20;
 
 impl Library {
-    /// Finds the photos (slow on a big network folder: call it off the UI thread). `Err`: what to
-    /// tell the person instead of a slideshow.
-    pub fn open(settings: &Settings, data_dir: &Path, towns: Option<&Path>) -> Result<Self, String> {
+    /// Finds the photos (slow on a big network folder: call it off the UI thread). `remember`: keep
+    /// where the slideshow got to (not for the preview). `Err`: what to tell the person instead of a
+    /// slideshow.
+    pub fn open(
+        settings: &Settings,
+        data_dir: &Path,
+        towns: Option<&Path>,
+        remember: bool,
+    ) -> Result<Self, String> {
         if settings.folder.is_empty() {
             return Err("Choose a photo folder in the screensaver's settings.".into());
         }
@@ -51,9 +57,13 @@ impl Library {
         crate::log::line(&format!("{} photos in {}", entries.len(), folder.display()));
         let cache = Cache::open(&folder, data_dir).map(Arc::new);
         let dates = cache.as_ref().map(|c| c.dates()).unwrap_or_default();
-        let state = State::open(&data_dir.join("state.sqlite"), &folder)
-            .map_err(|e| crate::log::line(&format!("can't keep the slideshow's place: {e}")))
-            .ok();
+        let state = remember
+            .then(|| {
+                State::open(&data_dir.join("state.sqlite"), &folder)
+                    .map_err(|e| crate::log::line(&format!("can't keep the slideshow's place: {e}")))
+                    .ok()
+            })
+            .flatten();
         let playlist = Playlist::new(entries, settings.order, &dates, state, Rng::from_time());
         let client = (!settings.server_url.is_empty())
             .then(|| Client::new(&settings.server_url, &settings.device_key, geo::REQUEST_TIMEOUT));
@@ -142,7 +152,7 @@ mod tests {
 
         let settings = Settings { folder: photos.to_string_lossy().into(), ..Default::default() };
         let towns = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/places.sqlite");
-        let library = Library::open(&settings, &dir.join("data"), Some(&towns)).unwrap();
+        let library = Library::open(&settings, &dir.join("data"), Some(&towns), true).unwrap();
         assert_eq!(library.len(), 1);
         let ready = library.next().unwrap();
         assert_eq!(ready.entry.path, "trip/a.jpg");
@@ -153,8 +163,11 @@ mod tests {
 
         let empty = Settings { folder: dir.join("data").to_string_lossy().into(), ..Default::default() };
         assert!(
-            Library::open(&empty, &dir.join("data2"), None).err().unwrap().starts_with("There are no photos")
+            Library::open(&empty, &dir.join("data2"), None, true)
+                .err()
+                .unwrap()
+                .starts_with("There are no photos")
         );
-        assert!(Library::open(&Settings::default(), &dir, None).is_err());
+        assert!(Library::open(&Settings::default(), &dir, None, true).is_err());
     }
 }

@@ -64,16 +64,27 @@ jobs:
           targets: x86_64-pc-windows-gnu
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # Most of the code is Windows-only: the Linux checks don't see it.
+      # Most of the code is Windows-only: the Linux checks don't see it. HEIC (libheif) is linked
+      # in the real build below; without it this still checks all the Windows code.
       - name: Clippy (Windows target)
         run: cargo clippy --target x86_64-pc-windows-gnu --all-targets --locked -- -D warnings
-      - name: Build the .scr and the setup program
+      # The static libde265/libheif build takes ~10 minutes; the runner's persistent layer cache
+      # (shared with photo-stamp's identical stages) skips it.
+      - name: Build the .scr
+        run: |
+          docker build -f docker/Dockerfile.windows --target scr -o type=local,dest=build-out \
+            --build-arg PSS_VERSION="$(scripts/version.sh)" .
+      - name: Package with the towns database, and make the setup program
         run: scripts/build-windows.sh
+        env:
+          PSS_SCR: build-out/photo-stamp-screensaver.scr
+          # photo-stamp-places' towns database is a package; the automatic token can't read it.
+          TOKEN: ${{ secrets.PACKAGES_TOKEN }}
       - name: Check the .scr
         run: |
           scr=dist/photo-stamp-screensaver.scr
           x86_64-w64-mingw32-objdump -p "$scr" | grep "DLL Name" | sort -uf | tee dlls.txt
-          if grep -iE "libgcc|libstdc|libwinpthread" dlls.txt; then
+          if grep -iE "libgcc|libstdc|libwinpthread|libheif|libde265" dlls.txt; then
             echo "::error::the screensaver depends on non-system DLLs"
             exit 1
           fi

@@ -9,6 +9,7 @@ fn main() {
     match args::parse(std::env::args().skip(1)) {
         Mode::Run => win::saver::run(),
         Mode::Preview { parent } => win::saver::preview(parent),
+        Mode::Window => win::saver::window(),
         Mode::Settings { parent } => win::dialog::show(parent),
     }
 }
