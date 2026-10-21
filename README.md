@@ -11,6 +11,12 @@ file in the photo folder.
 **Status:** round 1 has the setup program and the settings. The screensaver itself is a placeholder for now: a
 black screen naming the photo folder. See [DESIGN.md](DESIGN.md) for the plan.
 
+**Downloads:** `photo-stamp-screensaver-setup-<version>.exe` on the
+[Releases](https://github.com/daterrell/photo-stamp-screensaver/releases) page. Every build of `main` (on
+[Forgejo](https://forgejo.terrell.ltd/dave/photo-stamp-screensaver/actions)) is also in Forgejo's package
+registry as `photo-stamp-screensaver-windows` (the newest 10 betas are kept). To release, tag a commit on `main`:
+`git tag v0.1.0 && git push origin v0.1.0`.
+
 ## Install
 
 Run `photo-stamp-screensaver-setup.exe`. Windows asks for permission, because screensavers are installed for

@@ -44,7 +44,7 @@ Windows runs the `.scr` with:
 | Order | A setting: shuffled (no repeats until all have shown, position kept across runs), by date taken, or by folder | |
 | Transitions | Crossfade with a slow pan/zoom (Ken Burns) | GPU-drawn (Direct2D) so it stays smooth on 4K |
 | Updates | Automatic, through the place server like photo-stamp | See below |
-| Publishing | As photo-stamp: package registry for main (beta), GitHub Release for v* tags | Needs `PACKAGES_TOKEN`, `GH_RELEASE_TOKEN` and a GitHub push mirror |
+| Publishing | As photo-stamp: package registry for main (beta), GitHub Release for v* tags | Set up: secrets, and the push mirror to github.com/daterrell/photo-stamp-screensaver |
 | Monitors | A different photo on each, changes staggered | |
 | Timing | Seconds per photo only | Windows' own "Wait N minutes" decides when it starts |
 | Lookups | Done for the *next* photo while the current one shows | So the next photo is never held up by the server |
@@ -57,9 +57,6 @@ Windows runs the `.scr` with:
   That change is in the photo-stamp-server repo, and the protocol copy in photo-stamp too.
 - **Client:** the `.scr` is in System32, so an update needs admin rights. The plan is for setup to register a
   scheduled task that runs as SYSTEM daily: it checks the server with a device key stored machine-wide, checks
-  the SHA-256, and swaps the file when the screensaver isn't running. Open: which device key the task uses (the
-  settings are per user and encrypted per user).
-
-## Open questions
-
-1. Auto-update: the machine-wide device key for the update task (see above).
+  the SHA-256, and swaps the file when the screensaver isn't running. When a user saves settings, the device key is
+  also stored machine-wide for that task: readable only by administrators and SYSTEM (registry ACL), encrypted
+  with DPAPI's machine scope. The last one saved wins.

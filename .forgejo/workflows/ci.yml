@@ -1,11 +1,14 @@
 name: CI
 
-# Checks every push and pull request, then builds the screensaver and its setup program, kept as a
-# short-lived Actions artifact. Publishing (package registry, GitHub Releases) comes later, as in
-# photo-stamp.
+# Checks every push and pull request, then builds the screensaver and its setup program.
 #
 # Versions come from git tags (scripts/version.sh): a build of tag v1.2.3 is 1.2.3, anything else
-# is like 1.2.4-dev.7+g1b37dbe.
+# is like 1.2.4-dev.7+g1b37dbe. Pushing a v*.*.* tag on a commit that's on main makes a release.
+#
+# What's left after a run is only what's usable, published: the builds in Forgejo's package
+# registry (pushes to main = beta, newest 10 kept; v* tags = stable), and a GitHub Release for
+# tags (Forgejo push-mirrors the repo to github.com/daterrell/photo-stamp-screensaver). Pull
+# request builds keep theirs as a short-lived Actions artifact.
 on:
   # Branches are checked through their pull request; pushing to one too would build the same
   # commit twice at once.
@@ -23,6 +26,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Builds in the generic package registry.
+  PACKAGE: photo-stamp-screensaver-windows
+  # Beta builds kept.
+  KEEP_BUILDS: "10"
 
 jobs:
   check:
@@ -74,12 +81,95 @@ jobs:
           x86_64-w64-mingw32-objdump -h "$scr" | grep -q "\.rsrc" \
             || { echo "::error::the screensaver has no resources (settings dialog, name, icon)"; exit 1; }
           test -s dist/photo-stamp-screensaver-setup.exe
+      # Pull requests: short-lived artifacts to try the build. Main and tags: published below.
       # Forgejo's fork: GitHub's upload-artifact v4+ doesn't work against Forgejo.
       - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        if: github.event_name == 'pull_request'
         with:
           name: photo-stamp-screensaver-windows
           path: |
             dist/photo-stamp-screensaver-setup.exe
             dist/photo-stamp-screensaver.scr
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
+      # Main = beta, v* tags = stable (the version says which). The .scr alone is for auto-update.
+      # The automatic token can't push packages.
+      - name: Publish to the package registry
+        if: github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          version=$(scripts/version.sh)
+          v=${version//+/%2B}
+          base="${{ github.server_url }}/api/packages/${{ github.repository_owner }}/generic/$PACKAGE/$v"
+          curl -sf -X PUT -H "Authorization: token $TOKEN" --upload-file dist/photo-stamp-screensaver.scr \
+            "$base/photo-stamp-screensaver-$v.scr" || { echo "::error::couldn't publish $version"; exit 1; }
+          curl -sf -X PUT -H "Authorization: token $TOKEN" --upload-file dist/photo-stamp-screensaver-setup.exe \
+            "$base/photo-stamp-screensaver-setup-$v.exe" || { echo "::error::couldn't publish the setup for $version"; exit 1; }
+          echo "published $PACKAGE $version"
+      # Keep the newest beta builds; stable ones are kept.
+      - name: Remove old beta builds
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          api="${{ github.server_url }}/api/v1/packages/${{ github.repository_owner }}"
+          curl -sf -H "Authorization: token $TOKEN" "$api?type=generic&q=$PACKAGE&limit=200" \
+            | jq -r --arg p "$PACKAGE" '[.[] | select(.name == $p and (.version | test("-dev")))] | sort_by(.created_at) | reverse | .['"$KEEP_BUILDS"':] | .[].version' \
+            | while read -r v; do
+                curl -sf -X DELETE -H "Authorization: token $TOKEN" "$api/generic/$PACKAGE/${v//+/%2B}" && echo "removed $PACKAGE $v"
+              done
+
+  release:
+    name: GitHub Release
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+      GH_REPO: daterrell/photo-stamp-screensaver
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Only commits that made it to main are released.
+      - name: Tag is on main
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME isn't on main; tag a commit on main to release it"
+            exit 1
+          fi
+      - name: Get the published build
+        env:
+          TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          base="${{ github.server_url }}/api/packages/${{ github.repository_owner }}/generic/$PACKAGE/$version"
+          curl -sfL -H "Authorization: token $TOKEN" -o photo-stamp-screensaver-setup.exe "$base/photo-stamp-screensaver-setup-$version.exe"
+      # The runner image has no gh.
+      - name: Install gh
+        run: |
+          curl -fsSL https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/gh_2.102.0_linux_amd64/bin/gh /usr/local/bin/gh
+      - name: Wait for the push mirror to bring the tag to GitHub
+        run: |
+          for _ in $(seq 60); do
+            gh api "repos/$GH_REPO/git/ref/tags/$GITHUB_REF_NAME" --silent 2>/dev/null && exit 0
+            sleep 5
+          done
+          echo "::error::$GITHUB_REF_NAME didn't reach github.com/$GH_REPO; check the repo's push mirror."
+          exit 1
+      - name: Create release
+        run: |
+          setup="photo-stamp-screensaver-setup-${GITHUB_REF_NAME}.exe"
+          mv photo-stamp-screensaver-setup.exe "$setup"
+          {
+            echo "**Windows:** download \`$setup\` and run it. Windows asks for permission (screensavers are"
+            echo "installed for everyone on the PC); then Screen Saver Settings opens, where **Settings...**"
+            echo "chooses your photo folder."
+            echo "If Windows says it protected your PC, click **More info**, then **Run anyway**."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" "$setup" --verify-tag --title "photo-stamp-screensaver $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes
+          rm -f "$setup" /usr/local/bin/gh
