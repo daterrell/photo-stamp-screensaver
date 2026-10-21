@@ -1,41 +1,21 @@
 //! Talking to the family's place server (photo-stamp-server, `/v1`). Every request carries
-//! `Authorization: Bearer <device key>`.
+//! `Authorization: Bearer <device key>`. The types are photo-stamp's (`proto`).
 
 use std::fmt;
 use std::time::Duration;
 
-use serde::Deserialize;
-
-use crate::places::{GpsPoint, PlaceReply, PlaceRequest};
+use crate::places::{ClientUpdate, GpsPoint, Me, PlaceReply, PlaceRequest};
 
 pub const VERSION: &str = env!("PSS_VERSION");
 
-/// What `GET /v1/me` says about this device (the fields the settings dialog shows).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct Me {
-    pub user: String,
-    pub device: String,
-    pub server_version: String,
-    /// When the server's place database was built (YYYY-MM-DD).
-    #[serde(default)]
-    pub places_built: Option<String>,
-    /// The server's data release and this person's places revision: cached answers from other ones
-    /// are asked again.
-    #[serde(default)]
-    pub data_version: String,
-    #[serde(default)]
-    pub rev: u64,
-}
-
-impl Me {
-    pub fn summary(&self) -> String {
-        let mut s = format!("Connected as {} ({}). Server {}", self.user, self.device, self.server_version);
-        if let Some(built) = &self.places_built {
-            s.push_str(&format!(", places from {built}"));
-        }
-        s.push('.');
-        s
+/// What the settings dialog says after a connection test.
+pub fn summary(me: &Me) -> String {
+    let mut s = format!("Connected as {} ({}). Server {}", me.user, me.device, me.server_version);
+    if let Some(built) = &me.places_built {
+        s.push_str(&format!(", places from {built}"));
     }
+    s.push('.');
+    s
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +36,8 @@ impl fmt::Display for CheckError {
         }
     }
 }
+
+impl std::error::Error for CheckError {}
 
 /// Asks the server who this key belongs to: proves the address and key work.
 pub fn check(url: &str, key: &str, timeout: Duration) -> Result<Me, CheckError> {
@@ -82,89 +64,137 @@ impl Client {
     }
 
     pub fn me(&self) -> Result<Me, CheckError> {
-        let resp = self.agent.get(format!("{}/v1/me", self.url)).header("Authorization", &self.auth).call();
-        parse(resp, "/v1/me")
+        json(&self.get("/v1/me")?, "/v1/me")
     }
 
     pub fn place(&self, at: GpsPoint) -> Result<PlaceReply, CheckError> {
-        let body = serde_json::to_vec(&PlaceRequest { lat: at.lat, lon: at.lon }).unwrap_or_default();
+        let body = serde_json::to_vec(&PlaceRequest { lat: at.lat, lon: at.lon, accuracy_m: None })
+            .unwrap_or_default();
         let resp = self
             .agent
             .post(format!("{}/v1/place", self.url))
             .header("Authorization", &self.auth)
             .header("Content-Type", "application/json")
             .send(&body[..]);
-        parse(resp, "/v1/place")
+        json(&body_of(resp)?, "/v1/place")
+    }
+
+    /// The screensaver's newest build on `channel` ("stable" or "beta"); `None` when none is
+    /// published.
+    pub fn latest(&self, channel: &str) -> Result<Option<ClientUpdate>, CheckError> {
+        let path = format!("/v1/client/latest?app=screensaver&channel={channel}");
+        let resp = self.agent.get(format!("{}{path}", self.url)).header("Authorization", &self.auth).call();
+        let mut resp = resp.map_err(|e| CheckError::Unreachable(e.to_string()))?;
+        if resp.status().as_u16() == 204 {
+            return Ok(None);
+        }
+        let bytes = read(&mut resp)?;
+        json(&bytes, "/v1/client/latest").map(Some)
+    }
+
+    /// Anything the server serves by path: a build to download, the towns database.
+    pub fn get(&self, path: &str) -> Result<Vec<u8>, CheckError> {
+        body_of(self.agent.get(format!("{}{path}", self.url)).header("Authorization", &self.auth).call())
     }
 }
 
-fn parse<T: serde::de::DeserializeOwned>(
-    resp: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
-    what: &str,
-) -> Result<T, CheckError> {
+/// The body of a successful answer.
+fn body_of(resp: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<Vec<u8>, CheckError> {
     let mut resp = resp.map_err(|e| CheckError::Unreachable(e.to_string()))?;
-    let status = resp.status().as_u16();
-    match status {
+    read(&mut resp)
+}
+
+fn read(resp: &mut ureq::http::Response<ureq::Body>) -> Result<Vec<u8>, CheckError> {
+    match resp.status().as_u16() {
         200 => {}
         401 | 403 => return Err(CheckError::Refused),
-        _ => return Err(CheckError::Unexpected(format!("HTTP {status}"))),
+        status => return Err(CheckError::Unexpected(format!("HTTP {status}"))),
     }
-    let body = resp.body_mut().read_to_string().map_err(|e| CheckError::Unreachable(e.to_string()))?;
-    serde_json::from_str(&body).map_err(|_| CheckError::Unexpected(format!("its answer to {what}")))
+    resp.body_mut()
+        .with_config()
+        // Builds are ~20 MB, the towns database ~8.
+        .limit(64 << 20)
+        .read_to_vec()
+        .map_err(|e| CheckError::Unreachable(e.to_string()))
+}
+
+fn json<T: serde::de::DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T, CheckError> {
+    serde_json::from_slice(bytes).map_err(|_| CheckError::Unexpected(format!("its answer to {what}")))
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
 
-    /// A one-request server that answers like photo-stamp-server would for `key`.
-    fn fake_server(key: &'static str) -> String {
+    /// What a fake server answers: status, then body.
+    pub type Answer = (u16, Vec<u8>);
+
+    /// A stand-in place server: `handle(method and path, authorized, body)` for each request, with
+    /// `key` the only key it knows.
+    pub fn fake_server(
+        key: &'static str,
+        handle: impl Fn(&str, bool, &[u8]) -> Answer + Send + 'static,
+    ) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut authorized = false;
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
-                    break;
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request = String::new();
+                if reader.read_line(&mut request).is_err() {
+                    continue;
                 }
-                authorized |= line.eq_ignore_ascii_case(&format!("authorization: Bearer {key}\r\n"));
+                let (mut len, mut authorized) = (0, false);
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    authorized |= line.eq_ignore_ascii_case(&format!("authorization: Bearer {key}\r\n"));
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; len];
+                let _ = reader.read_exact(&mut body);
+                let target = request.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+                let (status, reply) = handle(&target, authorized, &body);
+                let mut stream = stream;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    reply.len()
+                );
+                let _ = stream.write_all(&reply);
             }
-            let (status, body) = if authorized {
-                (
-                    "200 OK",
-                    r#"{"user":"dave","device":"den","history":true,"max_wait_hours":72,"rev":1,"data_version":"x","server_version":"1.2.3","places_built":"2026-10-11"}"#,
-                )
-            } else {
-                ("401 Unauthorized", r#"{"error":"missing or unknown device key"}"#)
-            };
-            let mut stream = stream;
-            write!(
-                stream,
-                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
         });
         url
     }
 
+    pub const ME: &str = r#"{"user":"dave","device":"den","history":true,"max_wait_hours":72,"rev":1,"data_version":"d1","server_version":"1.2.3","places_built":"2026-10-11"}"#;
+
+    fn me_server() -> String {
+        fake_server("psk_ok", |_, authorized, _| {
+            if authorized {
+                (200, ME.into())
+            } else {
+                (401, br#"{"error":"missing or unknown device key"}"#.to_vec())
+            }
+        })
+    }
+
     #[test]
     fn right_key() {
-        let me = check(&fake_server("psk_ok"), "psk_ok", Duration::from_secs(5)).unwrap();
-        assert_eq!(me.summary(), "Connected as dave (den). Server 1.2.3, places from 2026-10-11.");
+        let me = check(&me_server(), "psk_ok", Duration::from_secs(5)).unwrap();
+        assert_eq!(summary(&me), "Connected as dave (den). Server 1.2.3, places from 2026-10-11.");
     }
 
     #[test]
     fn wrong_key() {
-        assert_eq!(
-            check(&fake_server("psk_ok"), "psk_nope", Duration::from_secs(5)),
-            Err(CheckError::Refused)
-        );
+        assert_eq!(check(&me_server(), "psk_nope", Duration::from_secs(5)), Err(CheckError::Refused));
     }
 
     #[test]
@@ -172,5 +202,20 @@ mod tests {
         let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let err = check(&format!("http://127.0.0.1:{port}"), "k", Duration::from_secs(5)).unwrap_err();
         assert!(matches!(err, CheckError::Unreachable(_)), "{err:?}");
+    }
+
+    #[test]
+    fn latest_builds() {
+        let url = fake_server("k", |target, _, _| match target {
+            "GET /v1/client/latest?app=screensaver&channel=stable" => (
+                200,
+                br#"{"version":"0.2.0","sha256":"ab","path":"/v1/client/download/0.2.0?app=screensaver"}"#
+                    .to_vec(),
+            ),
+            _ => (204, Vec::new()),
+        });
+        let client = Client::new(&url, "k", Duration::from_secs(5));
+        assert_eq!(client.latest("stable").unwrap().unwrap().version, "0.2.0");
+        assert_eq!(client.latest("beta").unwrap(), None);
     }
 }

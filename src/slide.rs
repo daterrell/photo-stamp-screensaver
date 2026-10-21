@@ -3,7 +3,6 @@
 
 use std::time::Duration;
 
-use crate::playlist::Rng;
 use crate::settings::{Caption, Corner};
 
 /// How long one photo dissolves into the next (shorter for short photo times).
@@ -48,11 +47,11 @@ pub struct Motion {
 }
 
 impl Motion {
-    pub fn random(rng: &mut Rng, fill: bool) -> Self {
+    pub fn random(rng: &mut fastrand::Rng, fill: bool) -> Self {
         let max = if fill { FILL_ZOOM } else { FIT_ZOOM };
         // Half zoom in, half out.
-        let zoom = if rng.below(2) == 0 { (1.0, max) } else { (max, 1.0) };
-        let mut point = || (rng.unit() * 2.0 - 1.0, rng.unit() * 2.0 - 1.0);
+        let zoom = if rng.bool() { (1.0, max) } else { (max, 1.0) };
+        let mut point = || (rng.f32() * 2.0 - 1.0, rng.f32() * 2.0 - 1.0);
         let pan = if fill { (point(), point()) } else { ((0.0, 0.0), (0.0, 0.0)) };
         Self { fill, zoom, pan }
     }
@@ -127,7 +126,7 @@ mod tests {
 
     #[test]
     fn filling_always_covers_the_screen() {
-        let mut rng = Rng::from_time();
+        let mut rng = fastrand::Rng::new();
         for _ in 0..200 {
             let m = Motion::random(&mut rng, true);
             for p in [0.0, 0.3, 1.0] {
@@ -142,7 +141,7 @@ mod tests {
 
     #[test]
     fn whole_photos_stay_centered_and_in_bounds() {
-        let m = Motion::random(&mut Rng::from_time(), false);
+        let m = Motion::random(&mut fastrand::Rng::new(), false);
         let (l, t, r, b) = m.place((3000, 4000), SCREEN, 0.0);
         assert!((l + r - 3840.0).abs() < 0.01 && (t + b - 2160.0).abs() < 0.01);
         assert!(b - t <= 2160.0 * FIT_ZOOM + 0.01);

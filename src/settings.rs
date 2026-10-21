@@ -1,7 +1,7 @@
 //! What the settings dialog sets. Stored per user in the registry (`win::store`), with the device
 //! key encrypted for this user.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const MIN_SECONDS: u32 = 3;
 pub const MAX_SECONDS: u32 = 3600;
@@ -19,6 +19,49 @@ pub struct Settings {
     pub caption: Caption,
     pub corner: Corner,
     pub order: Order,
+    /// Which builds automatic updates install.
+    pub channel: Channel,
+}
+
+/// Which builds automatic updates install.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Channel {
+    /// Tagged releases only.
+    #[default]
+    Releases,
+    /// Every build of main (beta).
+    Every,
+}
+
+impl Channel {
+    /// In the order of the dialog's list; the position is what's saved.
+    pub const ALL: [(Channel, &str); 2] =
+        [(Channel::Releases, "Releases only"), (Channel::Every, "Every build")];
+
+    pub fn index(self) -> u32 {
+        Self::ALL.iter().position(|(c, _)| *c == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_index(i: u32) -> Self {
+        Self::ALL.get(i as usize).map_or_else(Self::default, |(c, _)| *c)
+    }
+
+    /// What the place server calls it.
+    pub fn server_name(self) -> &'static str {
+        match self {
+            Channel::Releases => "stable",
+            Channel::Every => "beta",
+        }
+    }
+}
+
+/// What the updater (running as SYSTEM) uses: kept machine-wide, where only an administrator can
+/// change it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Updates {
+    pub server_url: String,
+    pub device_key: String,
+    pub channel: Channel,
 }
 
 /// Which photo comes next.
@@ -107,6 +150,7 @@ impl Default for Settings {
             caption: Caption::default(),
             corner: Corner::default(),
             order: Order::default(),
+            channel: Channel::default(),
         }
     }
 }
@@ -127,6 +171,15 @@ pub struct Invalid {
 }
 
 impl Settings {
+    /// The update settings these imply; `None` without a place server.
+    pub fn updates(&self) -> Option<Updates> {
+        (!self.server_url.is_empty()).then(|| Updates {
+            server_url: self.server_url.clone(),
+            device_key: self.device_key.clone(),
+            channel: self.channel,
+        })
+    }
+
     /// Tidied (trimmed, normalized address) and checked, ready to save.
     pub fn validated(self) -> Result<Settings, Invalid> {
         let invalid = |field, message: &str| Invalid { field, message: message.to_owned() };
@@ -200,6 +253,7 @@ mod tests {
             caption: Caption::Fade,
             corner: Corner::TopRight,
             order: Order::ByDate,
+            channel: Channel::Every,
         };
         assert_eq!(
             s.validated(),
@@ -211,6 +265,7 @@ mod tests {
                 caption: Caption::Fade,
                 corner: Corner::TopRight,
                 order: Order::ByDate,
+                channel: Channel::Every,
             })
         );
     }
@@ -245,6 +300,10 @@ mod tests {
         for (o, _) in Order::ALL {
             assert_eq!(Order::from_index(o.index()), o);
         }
+        for (c, _) in Channel::ALL {
+            assert_eq!(Channel::from_index(c.index()), c);
+        }
+        assert_eq!(Channel::default().server_name(), "stable");
         assert_eq!(Caption::from_index(99), Caption::Always);
         assert_eq!(Corner::from_index(99), Corner::BottomLeft);
     }

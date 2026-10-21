@@ -15,5 +15,6 @@ pub mod playlist;
 pub mod server;
 pub mod settings;
 pub mod slide;
+pub mod update;
 #[cfg(windows)]
 pub mod win;

@@ -24,8 +24,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::{folder, resource, store, wide};
-use crate::server::{self, CheckError, Me};
-use crate::settings::{Caption, Corner, Field, MAX_SECONDS, MIN_SECONDS, Order, Settings, normalize_url};
+use crate::places::Me;
+use crate::server::{self, CheckError};
+use crate::settings::{
+    Caption, Channel, Corner, Field, MAX_SECONDS, MIN_SECONDS, Order, Settings, Updates, normalize_url,
+};
 
 // As in assets/screensaver.rc.
 const IDD_SETTINGS: u16 = 101;
@@ -42,6 +45,8 @@ const IDC_VERSION: i32 = 1010;
 const IDC_CAPTION: i32 = 1011;
 const IDC_CORNER: i32 = 1012;
 const IDC_ORDER: i32 = 1013;
+const IDC_CHANNEL: i32 = 1014;
+const IDC_UPDATES: i32 = 1015;
 
 /// Posted by the connection test's thread; `lparam` is a `Box<Result<Me, CheckError>>`.
 const WM_TESTED: u32 = WM_APP + 1;
@@ -124,6 +129,13 @@ fn init(dlg: HWND) {
     fill_list(dlg, IDC_CAPTION, &Caption::ALL.map(|(_, label)| label), settings.caption.index());
     fill_list(dlg, IDC_CORNER, &Corner::ALL.map(|(_, label)| label), settings.corner.index());
     fill_list(dlg, IDC_ORDER, &Order::ALL.map(|(_, label)| label), settings.order.index());
+    fill_list(dlg, IDC_CHANNEL, &Channel::ALL.map(|(_, label)| label), settings.channel.index());
+    let updates = match (store::machine_updates(), store::last_update_check()) {
+        (None, _) => "Not set up yet: saving a place server sets it up.".to_owned(),
+        (Some(_), None) => "Not checked yet.".to_owned(),
+        (Some(_), Some(last)) => last,
+    };
+    set_text(dlg, IDC_UPDATES, &updates);
     caption_changed(dlg);
     set_text(dlg, IDC_FOLDER, &settings.folder);
     set_text(dlg, IDC_URL, &settings.server_url);
@@ -198,7 +210,7 @@ fn start_test(dlg: HWND) {
 
 fn tested_message(result: &Result<Me, CheckError>) -> String {
     match result {
-        Ok(me) => me.summary(),
+        Ok(me) => server::summary(me),
         Err(e) => e.to_string(),
     }
 }
@@ -214,6 +226,7 @@ fn ok(dlg: HWND) {
         caption: Caption::from_index(selected(dlg, IDC_CAPTION)),
         corner: Corner::from_index(selected(dlg, IDC_CORNER)),
         order: Order::from_index(selected(dlg, IDC_ORDER)),
+        channel: Channel::from_index(selected(dlg, IDC_CHANNEL)),
     };
     let settings = match typed.validated() {
         Ok(s) => s,
@@ -238,13 +251,71 @@ fn ok(dlg: HWND) {
         }
     }
     match store::save(&settings) {
-        Ok(()) => unsafe {
-            EndDialog(dlg, 1);
-        },
+        Ok(()) => {
+            offer_updates(dlg, &settings);
+            unsafe { EndDialog(dlg, 1) };
+        }
         Err(e) => {
             message(dlg, &format!("Couldn't save the settings: {e}"), MB_OK | MB_ICONWARNING);
         }
     }
+}
+
+/// Updates run machine-wide from settings only an administrator can set: when these differ, offer
+/// to use them (Windows asks for permission). A "no" isn't asked again for the same settings.
+fn offer_updates(dlg: HWND, settings: &Settings) {
+    let Some(wanted) = settings.updates() else { return };
+    if store::machine_updates().as_ref() == Some(&wanted) || store::declined(&wanted) {
+        return;
+    }
+    let question = "Keep the screensaver up to date through this place server too?\n\nWindows will ask for permission, because updates are installed for everyone on this PC.";
+    if message(dlg, question, MB_YESNO | MB_ICONQUESTION) != IDYES {
+        return store::set_declined(&wanted);
+    }
+    if let Err(e) = hand_to_admin(dlg, &wanted) {
+        message(dlg, &format!("Automatic updates weren't set up: {e}"), MB_OK | MB_ICONWARNING);
+    }
+}
+
+/// Runs `/updates-set` elevated with the settings in a file only this user and administrators can
+/// read (this user's temp folder), and waits for it. cmd passes on the exit code.
+fn hand_to_admin(dlg: HWND, updates: &Updates) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
+    use windows_sys::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    let file = std::env::temp_dir().join(format!("pss-updates-{}.json", std::process::id()));
+    std::fs::write(&file, serde_json::to_vec(updates).unwrap_or_default()).map_err(|e| e.to_string())?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Through cmd.exe: the shell starts a .scr with its own "/S" whatever the arguments.
+    let cmd =
+        format!(r"{}\System32\cmd.exe", std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
+    let (verb, exe_w) = (wide("runas"), wide(&cmd));
+    let params = wide(&format!("/c \"\"{}\" /updates-set \"{}\"\"", exe.display(), file.display()));
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS;
+    info.hwnd = dlg;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = exe_w.as_ptr();
+    info.lpParameters = params.as_ptr();
+    info.nShow = SW_HIDE;
+    let started = unsafe { ShellExecuteExW(&mut info) } != 0;
+    let result = if !started {
+        // Most often: "No" in the permission prompt.
+        Err("Windows didn't give permission.".to_owned())
+    } else {
+        let mut code = 1u32;
+        unsafe {
+            WaitForSingleObject(info.hProcess, INFINITE);
+            GetExitCodeProcess(info.hProcess, &mut code);
+            CloseHandle(info.hProcess);
+        }
+        if code == 0 { Ok(()) } else { Err("the settings couldn't be saved for everyone.".to_owned()) }
+    };
+    let _ = std::fs::remove_file(&file);
+    result
 }
 
 fn text(dlg: HWND, id: i32) -> String {

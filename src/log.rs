@@ -1,5 +1,5 @@
-//! A small log for finding out why a photo didn't show: `screensaver.log` in the data folder,
-//! started over once it passes 1 MB.
+//! A small log for finding out why a photo didn't show (`screensaver.log` in the data folder) or
+//! what the updater did (`update.log` in ProgramData), started over once it passes 1 MB.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -11,8 +11,13 @@ static FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Logs to `data_dir/screensaver.log` from now on (until then, nothing is logged).
 pub fn init(data_dir: &std::path::Path) {
-    let _ = std::fs::create_dir_all(data_dir);
-    let path = data_dir.join("screensaver.log");
+    init_named(data_dir, "screensaver.log");
+}
+
+/// Logs to `dir/name` from now on.
+pub fn init_named(dir: &std::path::Path, name: &str) {
+    let _ = std::fs::create_dir_all(dir);
+    let path = dir.join(name);
     if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_BYTES) {
         let _ = std::fs::remove_file(&path);
     }

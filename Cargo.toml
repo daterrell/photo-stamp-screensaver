@@ -7,12 +7,19 @@ description = "A Windows screensaver that shows a folder of photos with where an
 license = "MIT"
 
 [dependencies]
+anyhow = "1.0.104"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
+fastrand = "2.5.0"
+kamadak-exif = "0.6.1"
 libheif-rs = { version = "3.0.0", optional = true }
+# photo-stamp's place types, /v1 protocol, towns database reader and version ordering, from its
+# public mirror (pinned: bump the rev to pick up protocol changes).
+photo-stamp-proto = { git = "https://github.com/daterrell/photo-stamp", rev = "30c24e635e2614b57caad25b3d3a3102584d167a", features = ["places"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sha2 = "0.10.9"
 tzf-rs = "2.1.2"
 ureq = "3.4.2"
 walkdir = "2.5.0"
@@ -44,8 +51,10 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
+    "Win32_System_Threading",
     "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

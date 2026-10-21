@@ -24,6 +24,8 @@
 #define IDC_CAPTION 1011
 #define IDC_CORNER 1012
 #define IDC_ORDER 1013
+#define IDC_CHANNEL 1014
+#define IDC_UPDATES 1015
 
 1 ICON "photo-stamp.ico"
 1 24 "screensaver.manifest"
@@ -55,7 +57,7 @@ BEGIN
     END
 END
 
-IDD_SETTINGS DIALOGEX 0, 0, 300, 257
+IDD_SETTINGS DIALOGEX 0, 0, 300, 305
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "Photo Stamp screensaver"
@@ -85,7 +87,12 @@ BEGIN
     PUSHBUTTON      "&Test connection", IDC_TEST, 66, 188, 70, 14
     LTEXT           "", IDC_STATUS, 66, 206, 219, 18
 
-    LTEXT           "", IDC_VERSION, 7, 239, 150, 8, WS_DISABLED
-    DEFPUSHBUTTON   "OK", IDOK, 185, 236, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 243, 236, 50, 14
+    GROUPBOX        "Updates", -1, 7, 233, 286, 48
+    LTEXT           "&Install", -1, 15, 247, 48, 8
+    COMBOBOX        IDC_CHANNEL, 66, 245, 90, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "", IDC_UPDATES, 66, 263, 219, 16
+
+    LTEXT           "", IDC_VERSION, 7, 287, 150, 8, WS_DISABLED
+    DEFPUSHBUTTON   "OK", IDOK, 185, 284, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 243, 284, 50, 14
 END

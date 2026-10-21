@@ -48,7 +48,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use super::decode::{Decoded, Decoder, Pixels};
 use super::{store, wide};
 use crate::library::Library;
-use crate::playlist::Rng;
 use crate::settings::{Caption, Corner, Settings};
 use crate::slide::{self, Motion};
 
@@ -128,8 +127,7 @@ fn towns_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("PSS_TOWNS") {
         return Some(p.into());
     }
-    let dir = std::env::var_os("ProgramW6432").or_else(|| std::env::var_os("ProgramFiles"))?;
-    Some(PathBuf::from(dir).join(r"Photo Stamp Screensaver\towns.sqlite")).filter(|p| p.is_file())
+    Some(super::install_dir().join("towns.sqlite")).filter(|p| p.is_file())
 }
 
 /// A photo ready to go on screen.
@@ -239,7 +237,7 @@ struct Saver {
     target: Option<Target>,
     screens: Vec<Screen>,
     status: Status,
-    rng: Rng,
+    rng: fastrand::Rng,
 }
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
@@ -324,7 +322,7 @@ fn show(ex_style: u32, style: u32, (x, y, w, h): (i32, i32, i32, i32), parent: H
         target: None,
         screens,
         status,
-        rng: Rng::from_time(),
+        rng: fastrand::Rng::new(),
     };
     loop {
         let mut msg: MSG = unsafe { std::mem::zeroed() };

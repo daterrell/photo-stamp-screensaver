@@ -10,8 +10,10 @@
 ;
 ; Silent install (tests): photo-stamp-screensaver-setup.exe /S (doesn't open Screen Saver Settings).
 ;
-; The screensaver's own settings (HKCU\Software\Photo Stamp Screensaver) and the place caches in the
-; photo folders are kept on uninstall, as are the photos.
+; Setup also has the .scr schedule its automatic updates (`/install`: a SYSTEM task, and the
+; installing user's place server copied machine-wide); uninstalling undoes that (`/uninstall`). The
+; users' own settings (HKCU\Software\Photo Stamp Screensaver) and the place caches in the photo
+; folders are kept on uninstall, as are the photos.
 
 Unicode true
 !include "MUI2.nsh"
@@ -112,6 +114,15 @@ Section "Install"
   SetShellVarContext all
   CreateShortcut "${SHORTCUT}" "${SCRPATH}" "/c" "${SCRPATH}" 0
 
+  ; Automatic updates: a scheduled task (as SYSTEM), using this user's place server if they have one
+  ; (or photo-stamp's). The .scr does it, so it's the same code the settings dialog uses.
+  ${DisableX64FSRedirection}
+  ExecWait '"${SCRPATH}" /install' $0
+  ${EnableX64FSRedirection}
+  ${If} $0 != 0
+    DetailPrint "Automatic updates couldn't be scheduled ($0)."
+  ${EndIf}
+
   ; This user's screensaver from now on. (Setup runs elevated: on a standard account that
   ; borrowed an administrator's password, this is the administrator's; Screen Saver Settings,
   ; opened at the end, sets it for the right person either way.)
@@ -128,8 +139,10 @@ Function OpenScreenSaverSettings
 FunctionEnd
 
 Section "Uninstall"
-  ; Windows may have recorded the screensaver by its short (8.3) name; compare long names.
+  ; No more update task or machine-wide update settings (users' own settings stay).
   ${DisableX64FSRedirection}
+  ExecWait '"${SCRPATH}" /uninstall'
+  ; Windows may have recorded the screensaver by its short (8.3) name; compare long names.
   ReadRegStr $0 HKCU "${DESKTOP}" "SCRNSAVE.EXE"
   ${If} $0 != ""
     System::Call 'kernel32::GetLongPathNameW(w r0, w .r1, i ${NSIS_MAX_STRLEN}) i .r2'
@@ -142,11 +155,16 @@ Section "Uninstall"
     DeleteRegValue HKCU "${DESKTOP}" "SCRNSAVE.EXE"
   ${EndIf}
   Delete /REBOOTOK "${SCRPATH}"
+  ; What updates leave behind.
+  Delete /REBOOTOK "${SCRPATH}.old"
+  Delete "${SCRPATH}.new"
   ${EnableX64FSRedirection}
 
   SetShellVarContext all
   Delete "${SHORTCUT}"
   Delete "$INSTDIR\towns.sqlite"
+  Delete "$INSTDIR\towns.sqlite.old"
+  Delete "$INSTDIR\towns.sqlite.new"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UKEY}"
