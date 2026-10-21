@@ -21,12 +21,18 @@ non-technical family, as with photo-stamp.
 
 ## Gotchas
 
-- `src/places.rs` and the protocol types are copied from photo-stamp's `proto` (`/v1`); keep them in step.
-- No new third-party crates without asking: the user prefers the ones photo-stamp already uses.
+- photo-stamp's `proto` is a git dependency on its GitHub mirror, pinned by `rev`: bump it to pick up protocol
+  changes. Prefer established crates to hand-rolled code (the user asked for that in round 3).
 - `docker/Dockerfile.windows`' toolchain and codecs stages are byte-for-byte photo-stamp's, so the slow codec
   build is cached once for both. Change the screensaver's own `decoders` stage instead.
 - The setup is 32-bit NSIS: `$SYSDIR` is SysWOW64. Use `$WINDIR\System32` with `${DisableX64FSRedirection}`.
 - The user may have a real install: settings live in `HKCU\Software\Photo Stamp Screensaver` and the setup writes
   `HKCU\Control Panel\Desktop\SCRNSAVE.EXE`. Look before changing them in tests, and kill only PIDs you started.
-- Starting a `.scr` through the shell (`Start-Process`) goes through its default verb (`"%1" /S`), so `/c` may not
-  arrive; start it with `UseShellExecute = false`.
+- Starting a `.scr` through the shell (ShellExecute, `Start-Process` without `-NoNewWindow`) runs its default verb,
+  `"%1" /S`, whatever the arguments, and Task Scheduler won't start one at all ("file not found"). Start it with
+  CreateProcess (`UseShellExecute = false`, NSIS `ExecWait`) or through `cmd.exe /c`, as the update task and the
+  dialog's elevated `/updates-set` do.
+- The user's WSL terminal runs elevated (High integrity): writing to Program Files or HKLM from it working
+  proves nothing about what a normal user can do.
+- Testing the updater on the real PC changes `HKLM\Software\Photo Stamp Screensaver\Updates`; `/install` (started
+  directly) puts the installing user's settings back if a test clobbered them.

@@ -278,7 +278,7 @@ fn offer_updates(dlg: HWND, settings: &Settings) {
 }
 
 /// Runs `/updates-set` elevated with the settings in a file only this user and administrators can
-/// read (this user's temp folder), and waits for it.
+/// read (this user's temp folder), and waits for it. cmd passes on the exit code.
 fn hand_to_admin(dlg: HWND, updates: &Updates) -> Result<(), String> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
@@ -288,8 +288,11 @@ fn hand_to_admin(dlg: HWND, updates: &Updates) -> Result<(), String> {
     let file = std::env::temp_dir().join(format!("pss-updates-{}.json", std::process::id()));
     std::fs::write(&file, serde_json::to_vec(updates).unwrap_or_default()).map_err(|e| e.to_string())?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let (verb, exe_w) = (wide("runas"), wide(&exe.to_string_lossy()));
-    let params = wide(&format!("/updates-set \"{}\"", file.display()));
+    // Through cmd.exe: the shell starts a .scr with its own "/S" whatever the arguments.
+    let cmd =
+        format!(r"{}\System32\cmd.exe", std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
+    let (verb, exe_w) = (wide("runas"), wide(&cmd));
+    let params = wide(&format!("/c \"\"{}\" /updates-set \"{}\"\"", exe.display(), file.display()));
     let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
     info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
     info.fMask = SEE_MASK_NOCLOSEPROCESS;
