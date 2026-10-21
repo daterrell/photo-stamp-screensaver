@@ -11,6 +11,12 @@ fn main() {
         Mode::Preview { parent } => win::saver::preview(parent),
         Mode::Window => win::saver::window(),
         Mode::Settings { parent } => win::dialog::show(parent),
+        Mode::Update => std::process::exit(win::updater::run()),
+        Mode::UpdatesSet(file) => {
+            std::process::exit(win::updater::set_from_file(std::path::Path::new(&file)))
+        }
+        Mode::Install => std::process::exit(win::updater::install()),
+        Mode::Uninstall => std::process::exit(win::updater::uninstall()),
     }
 }
 

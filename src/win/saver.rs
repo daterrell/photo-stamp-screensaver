@@ -127,8 +127,7 @@ fn towns_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("PSS_TOWNS") {
         return Some(p.into());
     }
-    let dir = std::env::var_os("ProgramW6432").or_else(|| std::env::var_os("ProgramFiles"))?;
-    Some(PathBuf::from(dir).join(r"Photo Stamp Screensaver\towns.sqlite")).filter(|p| p.is_file())
+    Some(super::install_dir().join("towns.sqlite")).filter(|p| p.is_file())
 }
 
 /// A photo ready to go on screen.
