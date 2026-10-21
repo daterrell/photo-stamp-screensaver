@@ -16,6 +16,59 @@ pub struct Settings {
     /// This PC's device key (`photo-stamp-server device add …`).
     pub device_key: String,
     pub seconds_per_photo: u32,
+    pub caption: Caption,
+    pub corner: Corner,
+}
+
+/// Whether where and when a photo was taken shows over it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Caption {
+    #[default]
+    Always,
+    /// Fades in a moment after the photo appears, then out again before the next.
+    Fade,
+    Hidden,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Corner {
+    #[default]
+    BottomLeft,
+    BottomRight,
+    TopLeft,
+    TopRight,
+}
+
+impl Caption {
+    /// In the order of the dialog's list; the position is what's saved.
+    pub const ALL: [(Caption, &str); 3] =
+        [(Caption::Always, "Always"), (Caption::Fade, "Fading in and out"), (Caption::Hidden, "Never")];
+
+    pub fn index(self) -> u32 {
+        Self::ALL.iter().position(|(c, _)| *c == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_index(i: u32) -> Self {
+        Self::ALL.get(i as usize).map_or_else(Self::default, |(c, _)| *c)
+    }
+}
+
+impl Corner {
+    /// In the order of the dialog's list; the position is what's saved.
+    pub const ALL: [(Corner, &str); 4] = [
+        (Corner::BottomLeft, "Bottom left"),
+        (Corner::BottomRight, "Bottom right"),
+        (Corner::TopLeft, "Top left"),
+        (Corner::TopRight, "Top right"),
+    ];
+
+    pub fn index(self) -> u32 {
+        Self::ALL.iter().position(|(c, _)| *c == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_index(i: u32) -> Self {
+        Self::ALL.get(i as usize).map_or_else(Self::default, |(c, _)| *c)
+    }
 }
 
 impl Default for Settings {
@@ -25,6 +78,8 @@ impl Default for Settings {
             server_url: String::new(),
             device_key: String::new(),
             seconds_per_photo: DEFAULT_SECONDS,
+            caption: Caption::default(),
+            corner: Corner::default(),
         }
     }
 }
@@ -69,7 +124,7 @@ impl Settings {
                 message: format!("Show each photo for {MIN_SECONDS} to {MAX_SECONDS} seconds."),
             });
         }
-        Ok(Settings { folder, server_url, device_key, seconds_per_photo: self.seconds_per_photo })
+        Ok(Settings { folder, server_url, device_key, ..self })
     }
 }
 
@@ -115,6 +170,8 @@ mod tests {
             server_url: " https://places.example.com/ ".into(),
             device_key: " psk_1 ".into(),
             seconds_per_photo: 8,
+            caption: Caption::Fade,
+            corner: Corner::TopRight,
         };
         assert_eq!(
             s.validated(),
@@ -122,7 +179,9 @@ mod tests {
                 folder: "D:\\Photos".into(),
                 server_url: "https://places.example.com".into(),
                 device_key: "psk_1".into(),
-                seconds_per_photo: 8
+                seconds_per_photo: 8,
+                caption: Caption::Fade,
+                corner: Corner::TopRight,
             })
         );
     }
@@ -144,6 +203,18 @@ mod tests {
             let s = Settings { seconds_per_photo: secs, ..Default::default() };
             assert_eq!(s.validated().is_ok(), ok, "{secs}");
         }
+    }
+
+    #[test]
+    fn choices_round_trip() {
+        for (c, _) in Caption::ALL {
+            assert_eq!(Caption::from_index(c.index()), c);
+        }
+        for (c, _) in Corner::ALL {
+            assert_eq!(Corner::from_index(c.index()), c);
+        }
+        assert_eq!(Caption::from_index(99), Caption::Always);
+        assert_eq!(Corner::from_index(99), Corner::BottomLeft);
     }
 
     #[test]

@@ -10,8 +10,9 @@ Status: round 1 built. Items marked **(assumed)** are defaults not yet confirmed
 ## Round 1 scope
 
 1. **Installer** (NSIS, built on Linux like photo-stamp's).
-2. **Settings dialog** (`.scr /c`): photo folder, place server URL, device key (with a *Test connection*
-   button that calls `GET /v1/me`), seconds per photo.
+2. **Settings dialog** (`.scr /c`): photo folder, seconds per photo, the caption (always / fading in and out /
+   never, and its corner), place server URL and device key (with a *Test connection* button that calls
+   `GET /v1/me`).
 3. A placeholder `/s` (black screen naming the folder, closing on input) and `/p`, so the install can be
    tested end to end.
 
@@ -39,17 +40,17 @@ Windows runs the `.scr` with:
 | Metadata | Native EXIF reader (no exiftool) | Spawning exiftool per photo is too slow for a screensaver; HEIC needs the EXIF from the container |
 | Formats | JPEG, PNG, WebP, HEIC; RAW via its embedded preview | Videos and other files skipped; hidden and dot folders skipped |
 | Already-stamped photos | Shown without an overlay | Detected by the `photo-stamp` XMP keyword |
+| Caption | A setting: always, fading in and out, or never; and the corner | The photo-stamp look: white, outlined, shadowed |
+| Monitors | A different photo on each, changes staggered | |
 | Timing | Seconds per photo only | Windows' own "Wait N minutes" decides when it starts |
 | Lookups | Done for the *next* photo while the current one shows | So the next photo is never held up by the server |
 | Server unreachable | Show the photo without a place; ask again next time it comes up **(assumed)** | No towns.sqlite fallback in v1 |
 
 ## Open questions
 
-1. **Overlay:** the photo-stamp caption in the bottom-left, always on? Or as a toggle, or fading in and out?
-2. **Multiple monitors:** a different photo on each, the same photo on each, or the primary only?
-3. **Order:** shuffle (without repeats until all have shown), by date, or by folder?
-4. **Transitions:** cut, crossfade, or a slow pan/zoom?
-5. **Updates:** auto-update through the place server like photo-stamp (needs a server-side channel for this
+1. **Order:** shuffle (without repeats until all have shown), by date, or by folder?
+2. **Transitions:** cut, crossfade, or a slow pan/zoom?
+3. **Updates:** auto-update through the place server like photo-stamp (needs a server-side channel for this
    app), or manual reinstall?
-6. **Publishing:** the package registry and GitHub Releases as in photo-stamp (needs `PACKAGES_TOKEN` and
+4. **Publishing:** the package registry and GitHub Releases as in photo-stamp (needs `PACKAGES_TOKEN` and
    `GH_RELEASE_TOKEN` on this repo, and a GitHub mirror)?

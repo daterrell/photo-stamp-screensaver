@@ -1,5 +1,6 @@
 //! The settings dialog (`.scr /c`), laid out in `assets/screensaver.rc`: the photo folder, how long
-//! each photo shows, and the place server's address and device key, with a connection test.
+//! each photo shows, whether and where the caption shows, and the place server's address and device
+//! key, with a connection test.
 
 use std::path::Path;
 use std::ptr::null_mut;
@@ -15,15 +16,16 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    BM_GETCHECK, DialogBoxParamW, EndDialog, GetDlgItem, GetDlgItemInt, GetWindowTextLengthW, GetWindowTextW,
-    ICON_BIG, ICON_SMALL, IDCANCEL, IDOK, IDYES, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW, MB_ICONQUESTION,
-    MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxW, PostMessageW, SendDlgItemMessageW, SendMessageW,
-    SetDlgItemTextW, WM_APP, WM_COMMAND, WM_INITDIALOG, WM_NEXTDLGCTL, WM_SETICON,
+    BM_GETCHECK, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, DialogBoxParamW, EndDialog,
+    GetDlgItem, GetDlgItemInt, GetWindowTextLengthW, GetWindowTextW, ICON_BIG, ICON_SMALL, IDCANCEL, IDOK,
+    IDYES, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW, MB_ICONQUESTION, MB_ICONWARNING, MB_OK, MB_YESNO,
+    MessageBoxW, PostMessageW, SendDlgItemMessageW, SendMessageW, SetDlgItemTextW, WM_APP, WM_COMMAND,
+    WM_INITDIALOG, WM_NEXTDLGCTL, WM_SETICON,
 };
 
 use super::{folder, resource, store, wide};
 use crate::server::{self, CheckError, Me};
-use crate::settings::{Field, MAX_SECONDS, MIN_SECONDS, Settings, normalize_url};
+use crate::settings::{Caption, Corner, Field, MAX_SECONDS, MIN_SECONDS, Settings, normalize_url};
 
 // As in assets/screensaver.rc.
 const IDD_SETTINGS: u16 = 101;
@@ -37,6 +39,8 @@ const IDC_SHOWKEY: i32 = 1007;
 const IDC_TEST: i32 = 1008;
 const IDC_STATUS: i32 = 1009;
 const IDC_VERSION: i32 = 1010;
+const IDC_CAPTION: i32 = 1011;
+const IDC_CORNER: i32 = 1012;
 
 /// Posted by the connection test's thread; `lparam` is a `Box<Result<Me, CheckError>>`.
 const WM_TESTED: u32 = WM_APP + 1;
@@ -77,6 +81,7 @@ unsafe extern "system" fn dialog_proc(dlg: HWND, msg: u32, wparam: WPARAM, lpara
                 IDC_BROWSE => browse(dlg),
                 IDC_SHOWKEY => show_key(dlg),
                 IDC_TEST => start_test(dlg),
+                IDC_CAPTION if (wparam >> 16) as u32 == CBN_SELCHANGE => caption_changed(dlg),
                 IDOK => ok(dlg),
                 IDCANCEL => unsafe {
                     EndDialog(dlg, 0);
@@ -115,6 +120,9 @@ fn init(dlg: HWND) {
         let cue = wide("https://places.example.com");
         SendDlgItemMessageW(dlg, IDC_URL, EM_SETCUEBANNER, 0, cue.as_ptr() as isize);
     }
+    fill_list(dlg, IDC_CAPTION, &Caption::ALL.map(|(_, label)| label), settings.caption.index());
+    fill_list(dlg, IDC_CORNER, &Corner::ALL.map(|(_, label)| label), settings.corner.index());
+    caption_changed(dlg);
     set_text(dlg, IDC_FOLDER, &settings.folder);
     set_text(dlg, IDC_URL, &settings.server_url);
     set_text(dlg, IDC_KEY, &settings.device_key);
@@ -126,6 +134,24 @@ fn init(dlg: HWND) {
             "Filled in from Photo Stamp on this PC. A separate device key lets you tell them apart on the server.",
         );
     }
+}
+
+fn fill_list(dlg: HWND, id: i32, labels: &[&str], selected: u32) {
+    for label in labels {
+        let label = wide(label);
+        unsafe { SendDlgItemMessageW(dlg, id, CB_ADDSTRING, 0, label.as_ptr() as isize) };
+    }
+    unsafe { SendDlgItemMessageW(dlg, id, CB_SETCURSEL, selected as usize, 0) };
+}
+
+fn selected(dlg: HWND, id: i32) -> u32 {
+    unsafe { SendDlgItemMessageW(dlg, id, CB_GETCURSEL, 0, 0) }.max(0) as u32
+}
+
+/// The corner only matters while the caption shows.
+fn caption_changed(dlg: HWND) {
+    let shown = Caption::from_index(selected(dlg, IDC_CAPTION)) != Caption::Hidden;
+    unsafe { EnableWindow(GetDlgItem(dlg, IDC_CORNER), shown as i32) };
 }
 
 fn browse(dlg: HWND) {
@@ -183,6 +209,8 @@ fn ok(dlg: HWND) {
         server_url: text(dlg, IDC_URL),
         device_key: text(dlg, IDC_KEY),
         seconds_per_photo: if seconds_ok != 0 { seconds } else { 0 },
+        caption: Caption::from_index(selected(dlg, IDC_CAPTION)),
+        corner: Corner::from_index(selected(dlg, IDC_CORNER)),
     };
     let settings = match typed.validated() {
         Ok(s) => s,
