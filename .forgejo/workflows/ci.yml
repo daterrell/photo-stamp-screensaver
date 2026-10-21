@@ -1,0 +1,85 @@
+name: CI
+
+# Checks every push and pull request, then builds the screensaver and its setup program, kept as a
+# short-lived Actions artifact. Publishing (package registry, GitHub Releases) comes later, as in
+# photo-stamp.
+#
+# Versions come from git tags (scripts/version.sh): a build of tag v1.2.3 is 1.2.3, anything else
+# is like 1.2.4-dev.7+g1b37dbe.
+on:
+  # Branches are checked through their pull request; pushing to one too would build the same
+  # commit twice at once.
+  push:
+    branches: ["main"]
+    tags: ["v*.*.*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Tests, clippy, rustfmt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The runner image has no rustup.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  windows:
+    name: Windows build and setup
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        # All history and tags: scripts/version.sh describes the commit from the newest tag.
+        with:
+          fetch-depth: 0
+      - name: mingw-w64 and NSIS
+        run: |
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y --no-install-recommends mingw-w64 nsis >/dev/null
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Most of the code is Windows-only: the Linux checks don't see it.
+      - name: Clippy (Windows target)
+        run: cargo clippy --target x86_64-pc-windows-gnu --all-targets --locked -- -D warnings
+      - name: Build the .scr and the setup program
+        run: scripts/build-windows.sh
+      - name: Check the .scr
+        run: |
+          scr=dist/photo-stamp-screensaver.scr
+          x86_64-w64-mingw32-objdump -p "$scr" | grep "DLL Name" | sort -uf | tee dlls.txt
+          if grep -iE "libgcc|libstdc|libwinpthread" dlls.txt; then
+            echo "::error::the screensaver depends on non-system DLLs"
+            exit 1
+          fi
+          # The name, icon, manifest and settings dialog (assets/screensaver.rc) are linked in.
+          x86_64-w64-mingw32-objdump -h "$scr" | grep -q "\.rsrc" \
+            || { echo "::error::the screensaver has no resources (settings dialog, name, icon)"; exit 1; }
+          test -s dist/photo-stamp-screensaver-setup.exe
+      # Forgejo's fork: GitHub's upload-artifact v4+ doesn't work against Forgejo.
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: photo-stamp-screensaver-windows
+          path: |
+            dist/photo-stamp-screensaver-setup.exe
+            dist/photo-stamp-screensaver.scr
+          if-no-files-found: error
+          retention-days: 7

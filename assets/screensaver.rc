@@ -1,0 +1,83 @@
+// Windows resources for photo-stamp-screensaver.scr (compiled by build.rs with mingw's windres):
+// the name Screen Saver Settings shows, the icon, the manifest and the settings dialog. The IDs
+// are repeated in src/win/dialog.rs.
+#include <windows.h>
+#include <commctrl.h>
+
+#ifndef VER_MAJOR
+#define VER_MAJOR 0
+#define VER_MINOR 0
+#define VER_PATCH 0
+#endif
+
+#define IDD_SETTINGS 101
+#define IDC_FOLDER 1001
+#define IDC_BROWSE 1002
+#define IDC_SECONDS 1003
+#define IDC_SECONDS_SPIN 1004
+#define IDC_URL 1005
+#define IDC_KEY 1006
+#define IDC_SHOWKEY 1007
+#define IDC_TEST 1008
+#define IDC_STATUS 1009
+#define IDC_VERSION 1010
+
+1 ICON "photo-stamp.ico"
+1 24 "screensaver.manifest"
+
+// String 1 is the name in Screen Saver Settings' list.
+STRINGTABLE
+BEGIN
+    1 "Photo Stamp"
+END
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Photo Stamp"
+            VALUE "ProductName", "Photo Stamp screensaver"
+            VALUE "OriginalFilename", "photo-stamp-screensaver.scr"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+IDD_SETTINGS DIALOGEX 0, 0, 300, 217
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Photo Stamp screensaver"
+FONT 9, "Segoe UI", 400, 0, 1
+BEGIN
+    GROUPBOX        "Photos", -1, 7, 7, 286, 64
+    LTEXT           "&Folder (its subfolders are included too):", -1, 15, 20, 270, 8
+    EDITTEXT        IDC_FOLDER, 15, 31, 212, 14, ES_AUTOHSCROLL
+    PUSHBUTTON      "&Browse...", IDC_BROWSE, 231, 31, 54, 14
+    LTEXT           "Show &each photo for", -1, 15, 52, 70, 8
+    EDITTEXT        IDC_SECONDS, 86, 50, 36, 14, ES_NUMBER
+    CONTROL         "", IDC_SECONDS_SPIN, UPDOWN_CLASS, UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0
+    LTEXT           "seconds", -1, 126, 52, 40, 8
+
+    GROUPBOX        "Place server", -1, 7, 77, 286, 110
+    LTEXT           "Where and when each photo was taken comes from the family's place server. Leave it empty to show photos without places.", -1, 15, 89, 270, 16
+    LTEXT           "&Address:", -1, 15, 112, 48, 8
+    EDITTEXT        IDC_URL, 66, 110, 219, 14, ES_AUTOHSCROLL
+    LTEXT           "Device &key:", -1, 15, 131, 48, 8
+    EDITTEXT        IDC_KEY, 66, 129, 179, 14, ES_AUTOHSCROLL | ES_PASSWORD
+    AUTOCHECKBOX    "&Show", IDC_SHOWKEY, 251, 131, 34, 10
+    PUSHBUTTON      "&Test connection", IDC_TEST, 66, 148, 70, 14
+    LTEXT           "", IDC_STATUS, 66, 166, 219, 18
+
+    LTEXT           "", IDC_VERSION, 7, 199, 150, 8, WS_DISABLED
+    DEFPUSHBUTTON   "OK", IDOK, 185, 196, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 243, 196, 50, 14
+END

@@ -1,0 +1,29 @@
+[package]
+name = "photo-stamp-screensaver"
+# Not the real version: that comes from the git tag (scripts/version.sh).
+version = "0.0.0"
+edition = "2024"
+description = "A Windows screensaver that shows a folder of photos with where and when each was taken"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+ureq = "3.4.2"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_Security_Cryptography",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_UI_Controls",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+strip = true
