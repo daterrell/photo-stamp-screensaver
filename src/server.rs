@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::places::{GpsPoint, PlaceReply, PlaceRequest};
+
 pub const VERSION: &str = env!("PSS_VERSION");
 
 /// What `GET /v1/me` says about this device (the fields the settings dialog shows).
@@ -17,6 +19,12 @@ pub struct Me {
     /// When the server's place database was built (YYYY-MM-DD).
     #[serde(default)]
     pub places_built: Option<String>,
+    /// The server's data release and this person's places revision: cached answers from other ones
+    /// are asked again.
+    #[serde(default)]
+    pub data_version: String,
+    #[serde(default)]
+    pub rev: u64,
 }
 
 impl Me {
@@ -51,17 +59,50 @@ impl fmt::Display for CheckError {
 
 /// Asks the server who this key belongs to: proves the address and key work.
 pub fn check(url: &str, key: &str, timeout: Duration) -> Result<Me, CheckError> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(timeout))
-        .http_status_as_error(false)
-        .user_agent(format!("photo-stamp-screensaver/{VERSION}"))
-        .build()
-        .into();
-    let mut resp = agent
-        .get(format!("{url}/v1/me"))
-        .header("Authorization", format!("Bearer {key}"))
-        .call()
-        .map_err(|e| CheckError::Unreachable(e.to_string()))?;
+    Client::new(url, key, timeout).me()
+}
+
+/// One place server and this PC's key for it.
+pub struct Client {
+    url: String,
+    auth: String,
+    agent: ureq::Agent,
+}
+
+impl Client {
+    /// `timeout`: for each whole request.
+    pub fn new(url: &str, key: &str, timeout: Duration) -> Self {
+        let agent = ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
+            .http_status_as_error(false)
+            .user_agent(format!("photo-stamp-screensaver/{VERSION}"))
+            .build()
+            .into();
+        Self { url: url.to_owned(), auth: format!("Bearer {key}"), agent }
+    }
+
+    pub fn me(&self) -> Result<Me, CheckError> {
+        let resp = self.agent.get(format!("{}/v1/me", self.url)).header("Authorization", &self.auth).call();
+        parse(resp, "/v1/me")
+    }
+
+    pub fn place(&self, at: GpsPoint) -> Result<PlaceReply, CheckError> {
+        let body = serde_json::to_vec(&PlaceRequest { lat: at.lat, lon: at.lon }).unwrap_or_default();
+        let resp = self
+            .agent
+            .post(format!("{}/v1/place", self.url))
+            .header("Authorization", &self.auth)
+            .header("Content-Type", "application/json")
+            .send(&body[..]);
+        parse(resp, "/v1/place")
+    }
+}
+
+fn parse<T: serde::de::DeserializeOwned>(
+    resp: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
+    what: &str,
+) -> Result<T, CheckError> {
+    let mut resp = resp.map_err(|e| CheckError::Unreachable(e.to_string()))?;
     let status = resp.status().as_u16();
     match status {
         200 => {}
@@ -69,7 +110,7 @@ pub fn check(url: &str, key: &str, timeout: Duration) -> Result<Me, CheckError> 
         _ => return Err(CheckError::Unexpected(format!("HTTP {status}"))),
     }
     let body = resp.body_mut().read_to_string().map_err(|e| CheckError::Unreachable(e.to_string()))?;
-    serde_json::from_str(&body).map_err(|_| CheckError::Unexpected("its answer to /v1/me".into()))
+    serde_json::from_str(&body).map_err(|_| CheckError::Unexpected(format!("its answer to {what}")))
 }
 
 #[cfg(test)]

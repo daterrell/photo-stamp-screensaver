@@ -5,7 +5,8 @@
 ;
 ; Built on Linux by scripts/build-windows.sh:
 ;   makensis -WX -DVERSION=0.1.0 -DVIVERSION=0.1.0.0 -DSCR=../dist/photo-stamp-screensaver.scr \
-;            -DOUTFILE=../dist/photo-stamp-screensaver-setup.exe installer/screensaver.nsi
+;            -DTOWNS=../dist/towns.sqlite -DOUTFILE=../dist/photo-stamp-screensaver-setup.exe \
+;            installer/screensaver.nsi
 ;
 ; Silent install (tests): photo-stamp-screensaver-setup.exe /S (doesn't open Screen Saver Settings).
 ;
@@ -26,6 +27,9 @@ Unicode true
 !ifndef SCR
   !define SCR "../dist/photo-stamp-screensaver.scr"
 !endif
+!ifndef TOWNS
+  !define TOWNS "../dist/towns.sqlite"
+!endif
 !ifndef OUTFILE
   !define OUTFILE "../dist/photo-stamp-screensaver-setup.exe"
 !endif
@@ -41,7 +45,8 @@ Unicode true
 Name "${APP}"
 OutFile "${OUTFILE}"
 RequestExecutionLevel admin
-; Only the uninstaller lives here; the screensaver itself is in System32.
+; The uninstaller and the towns database (places while the place server can't be reached) live
+; here; the screensaver itself is in System32.
 InstallDir "$PROGRAMFILES64\Photo Stamp Screensaver"
 SetCompressor /SOLID lzma
 BrandingText "${APP} ${VERSION}"
@@ -91,6 +96,7 @@ Section "Install"
   ${EnableX64FSRedirection}
 
   SetOutPath "$INSTDIR"
+  File "/oname=towns.sqlite" "${TOWNS}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "${UKEY}" "DisplayName" "${APP}"
   WriteRegStr HKLM "${UKEY}" "DisplayVersion" "${VERSION}"
@@ -101,7 +107,7 @@ Section "Install"
   WriteRegStr HKLM "${UKEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegDWORD HKLM "${UKEY}" "NoModify" 1
   WriteRegDWORD HKLM "${UKEY}" "NoRepair" 1
-  WriteRegDWORD HKLM "${UKEY}" "EstimatedSize" 5000
+  WriteRegDWORD HKLM "${UKEY}" "EstimatedSize" 20000
 
   SetShellVarContext all
   CreateShortcut "${SHORTCUT}" "${SCRPATH}" "/c" "${SCRPATH}" 0
@@ -140,6 +146,7 @@ Section "Uninstall"
 
   SetShellVarContext all
   Delete "${SHORTCUT}"
+  Delete "$INSTDIR\towns.sqlite"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UKEY}"

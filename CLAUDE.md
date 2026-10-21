@@ -13,11 +13,18 @@ non-technical family, as with photo-stamp.
 - CI runs `cargo fmt --all --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`
   and `cargo clippy --target x86_64-pc-windows-gnu --all-targets --locked -- -D warnings`. Most of the code is
   `cfg(windows)`, so the Windows clippy is the one that catches it.
-- `scripts/build-windows.sh` makes `dist/photo-stamp-screensaver.scr` and the setup.
+- `scripts/build-windows.sh` makes `dist/photo-stamp-screensaver.scr` (through Docker, with libheif) and the
+  setup. A quick local `.scr` without HEIC: `cargo build --release --target x86_64-pc-windows-gnu`.
+- Try the slideshow on the Windows side with `/w` (a normal window input doesn't close) and `PSS_FOLDER`,
+  `PSS_DATA_DIR`, so a test touches neither the real settings' folder nor the real per-PC state. Copy photos
+  into a scratch folder: the screensaver writes its cache file into whatever folder it shows.
 
 ## Gotchas
 
-- The protocol types are a subset of photo-stamp's `proto/src/api.rs` (`/v1`); keep them in step.
+- `src/places.rs` and the protocol types are copied from photo-stamp's `proto` (`/v1`); keep them in step.
+- No new third-party crates without asking: the user prefers the ones photo-stamp already uses.
+- `docker/Dockerfile.windows`' toolchain and codecs stages are byte-for-byte photo-stamp's, so the slow codec
+  build is cached once for both. Change the screensaver's own `decoders` stage instead.
 - The setup is 32-bit NSIS: `$SYSDIR` is SysWOW64. Use `$WINDIR\System32` with `${DisableX64FSRedirection}`.
 - The user may have a real install: settings live in `HKCU\Software\Photo Stamp Screensaver` and the setup writes
   `HKCU\Control Panel\Desktop\SCRNSAVE.EXE`. Look before changing them in tests, and kill only PIDs you started.

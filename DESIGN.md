@@ -5,7 +5,7 @@ was taken shown as an overlay, the same caption photo-stamp would burn in. Photo
 answers come from the existing photo-stamp-server (`/v1`, `Authorization: Bearer <device key>`) and are cached in
 a hidden SQLite file in the photo folder.
 
-Status: round 1 built. Items marked **(assumed)** are defaults not yet confirmed.
+Status: rounds 1 (setup, settings) and 2 (the slideshow) built; auto-update is next.
 
 ## Round 1 scope
 
@@ -13,8 +13,7 @@ Status: round 1 built. Items marked **(assumed)** are defaults not yet confirmed
 2. **Settings dialog** (`.scr /c`): photo folder, seconds per photo, order, the caption (always / fading in and out /
    never, and its corner), place server URL and device key (with a *Test connection* button that calls
    `GET /v1/me`).
-3. A placeholder `/s` (black screen naming the folder, closing on input) and `/p`, so the install can be
-   tested end to end.
+3. Round 2: the slideshow (`/s`, `/p`, and `/w` for trying it in a window).
 
 ## Screensaver contract
 
@@ -35,20 +34,22 @@ Windows runs the `.scr` with:
 | Install scope | Admin, into `System32` | Only screensavers in `System32` appear in the Screen Saver Settings list. Setup also sets it as the active screensaver |
 | Settings storage | `HKCU\Software\Photo Stamp Screensaver`; the key encrypted with DPAPI | Per user, nothing in the photo folder |
 | Credentials | Its own settings | The first time, the URL and key are pre-filled from photo-stamp's `client.json`; a separate device key is suggested |
-| Cache | `<top>\.photo-stamp-screensaver.sqlite`, hidden attribute | Photos may be local, on a NAS shared by several PCs, or in a synced folder: falls back to `%LOCALAPPDATA%\photo-stamp-screensaver\` if the folder is read-only or the db is locked |
-| Cache key | relative path + size + mtime → GPS, taken time, place, `data_version`, `rev` | Answers from an older server `data_version`/`rev` are asked again |
-| Metadata | Native EXIF reader (no exiftool) | Spawning exiftool per photo is too slow for a screensaver; HEIC needs the EXIF from the container |
-| Formats | JPEG, PNG, WebP, HEIC; RAW via its embedded preview | Videos and other files skipped; hidden and dot folders skipped |
+| Cache | `<top>\.photo-stamp-screensaver.sqlite`, hidden attribute, rollback journal (WAL breaks on shares), 5 s busy timeout | Photos may be local, on a NAS shared by several PCs, or in a synced folder: falls back to `%LOCALAPPDATA%\photo-stamp-screensaver\` if the folder is read-only or the db is locked |
+| Cache key | photos: relative path + size + mtime → metadata; answers: position to ~11 m (photo-stamp's key) → place, `data_version`, `rev` | Answers from an older server `data_version`/`rev` are asked again |
+| Metadata | Own small EXIF reader (no exiftool, no new crates) | Spawning exiftool per photo is too slow; HEIC's EXIF comes from libheif |
+| Formats | JPEG, PNG, TIFF, WebP, BMP, GIF through WIC; HEIC through a bundled libheif (decode-only, ~4 MB) | Videos and RAW skipped; hidden, dot, recycle-bin and NAS thumbnail folders skipped |
 | Already-stamped photos | Shown without an overlay | Detected by the `photo-stamp` XMP keyword |
 | Caption | A setting: always, fading in and out, or never; and the corner | The photo-stamp look: white, outlined, shadowed |
 | Order | A setting: shuffled (no repeats until all have shown, position kept across runs), by date taken, or by folder | |
 | Transitions | Crossfade with a slow pan/zoom (Ken Burns) | GPU-drawn (Direct2D) so it stays smooth on 4K |
 | Updates | Automatic, through the place server like photo-stamp | See below |
 | Publishing | As photo-stamp: package registry for main (beta), GitHub Release for v* tags | Set up: secrets, and the push mirror to github.com/daterrell/photo-stamp-screensaver |
-| Monitors | A different photo on each, changes staggered | |
+| Monitors | A different photo on each, changes staggered | One window over all monitors, one Direct2D target, paced by `DwmFlush` |
+| Framing | Photos keeping ≥70% when cropped to the screen fill it; others whole over a blurred copy | |
+| Per-PC state | Shuffle progress and position in `%LOCALAPPDATA%`, not the shared folder | The preview doesn't use it up |
 | Timing | Seconds per photo only | Windows' own "Wait N minutes" decides when it starts |
 | Lookups | Done for the *next* photo while the current one shows | So the next photo is never held up by the server |
-| Server unreachable | Show the photo without a place; ask again next time it comes up **(assumed)** | No towns.sqlite fallback in v1 |
+| Server unreachable | An older answer, else the nearest town from photo-stamp's towns.sqlite (installed in Program Files); asked again next time | Fallbacks aren't cached; after a failure the server rests 60 s |
 
 ## Auto-update (later round)
 

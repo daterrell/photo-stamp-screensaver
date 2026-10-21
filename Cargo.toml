@@ -7,17 +7,41 @@ description = "A Windows screensaver that shows a folder of photos with where an
 license = "MIT"
 
 [dependencies]
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+libheif-rs = { version = "3.0.0", optional = true }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tzf-rs = "2.1.2"
 ureq = "3.4.2"
+walkdir = "2.5.0"
+
+[features]
+# HEIC/HEIF through libheif, linked statically in the Windows build (docker/Dockerfile.windows).
+heif = ["dep:libheif-rs"]
 
 [target."cfg(windows)".dependencies]
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common"] }
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
+# Direct2D's matrices; comes with `windows`.
+windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Graphics_Gdi",
     "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_UI_Controls",
