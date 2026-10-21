@@ -126,9 +126,15 @@ pub fn uninstall() -> i32 {
 }
 
 /// Daily at a random time around noon (missed runs happen at the next chance) and 15 minutes after
-/// startup, as SYSTEM, only with a network.
+/// startup, as SYSTEM, only with a network. Through cmd.exe: Task Scheduler won't start a `.scr`
+/// itself ("file not found").
 fn task_xml(exe: &Path) -> String {
-    let exe = exe.display().to_string().replace('&', "&amp;").replace('<', "&lt;");
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let cmd = format!(r"{system_root}\System32\cmd.exe");
+    // cmd /c "<command line>": the outer quotes go, the inner ones stay.
+    let args = format!("/c \"\"{}\" /update\"", exe.display());
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
+    let (cmd, args) = (escape(&cmd), escape(&args));
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -155,7 +161,7 @@ fn task_xml(exe: &Path) -> String {
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
   </Settings>
   <Actions Context="System">
-    <Exec><Command>{exe}</Command><Arguments>/update</Arguments></Exec>
+    <Exec><Command>{cmd}</Command><Arguments>{args}</Arguments></Exec>
   </Actions>
 </Task>
 "#
