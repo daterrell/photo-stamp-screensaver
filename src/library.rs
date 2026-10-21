@@ -10,7 +10,7 @@ use crate::caption;
 use crate::exif::Info;
 use crate::geo::{self, Geo};
 use crate::places::Towns;
-use crate::playlist::{self, Entry, Playlist, Rng, State};
+use crate::playlist::{self, Entry, Playlist, State};
 use crate::server::Client;
 use crate::settings::Settings;
 
@@ -64,7 +64,7 @@ impl Library {
                     .ok()
             })
             .flatten();
-        let playlist = Playlist::new(entries, settings.order, &dates, state, Rng::from_time());
+        let playlist = Playlist::new(entries, settings.order, &dates, state, fastrand::Rng::new());
         let client = (!settings.server_url.is_empty())
             .then(|| Client::new(&settings.server_url, &settings.device_key, geo::REQUEST_TIMEOUT));
         let towns = towns.and_then(|p| {
@@ -120,10 +120,9 @@ impl Library {
 fn read_info(path: &str, bytes: &[u8]) -> Info {
     #[cfg(feature = "heif")]
     if crate::heif::is_heif(path) {
-        let mut info = crate::heif::exif(bytes).map(|t| crate::exif::parse_tiff(&t)).unwrap_or_default();
+        let mut info = Info::from_file_bytes(bytes);
         // libheif applies the container's rotation; EXIF's doesn't apply to HEIF.
         info.orientation = 1;
-        info.stamped = crate::exif::has_marker(bytes);
         return info;
     }
     let _ = path;
@@ -133,7 +132,7 @@ fn read_info(path: &str, bytes: &[u8]) -> Info {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exif::tests::sample_tiff;
+    use crate::exif::tests::{jpeg_with, sample_tiff};
 
     #[test]
     fn readies_photos_with_captions_and_remembers_them() {
@@ -141,13 +140,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let photos = dir.join("photos");
         std::fs::create_dir_all(photos.join("trip")).unwrap();
-        // A JPEG with nothing but the sample EXIF.
-        let t = sample_tiff();
-        let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
-        jpeg.extend(((t.len() + 8) as u16).to_be_bytes());
-        jpeg.extend(b"Exif\0\0");
-        jpeg.extend(&t);
-        jpeg.extend([0xff, 0xd9]);
+        let jpeg = jpeg_with(&sample_tiff());
         std::fs::write(photos.join("trip/a.jpg"), &jpeg).unwrap();
 
         let settings = Settings { folder: photos.to_string_lossy().into(), ..Default::default() };

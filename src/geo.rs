@@ -99,50 +99,22 @@ impl Geo {
 mod tests {
     use super::*;
     use crate::places::tests::fixture_towns;
-    use std::io::{BufRead, BufReader, Read, Write};
+    use crate::server::tests::{ME, fake_server as server};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A place server that answers every point with `primary`, counting the place requests.
     fn fake_server(primary: &'static str, asked: Arc<AtomicUsize>) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut request = String::new();
-                reader.read_line(&mut request).unwrap();
-                let mut len = 0;
-                loop {
-                    let mut line = String::new();
-                    if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
-                        break;
-                    }
-                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                        len = v.trim().parse().unwrap();
-                    }
-                }
-                let mut body = vec![0; len];
-                reader.read_exact(&mut body).unwrap();
-                let reply = if request.starts_with("GET /v1/me") {
-                    r#"{"user":"dave","device":"den","server_version":"1","data_version":"d1","rev":1}"#
-                        .to_owned()
-                } else {
-                    asked.fetch_add(1, Ordering::SeqCst);
-                    format!(
-                        r#"{{"place":{{"primary":"{primary}"}},"complete":true,"data_version":"d1","rev":1}}"#
-                    )
-                };
-                let mut stream = stream;
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
+        server("k", move |target, _, _| {
+            if target.starts_with("GET /v1/me") {
+                return (200, ME.into());
             }
-        });
-        url
+            asked.fetch_add(1, Ordering::SeqCst);
+            let reply = format!(
+                r#"{{"place":{{"primary":"{primary}"}},"complete":true,"data_version":"d1","rev":1}}"#
+            );
+            (200, reply.into_bytes())
+        })
     }
 
     fn temp(name: &str) -> std::path::PathBuf {

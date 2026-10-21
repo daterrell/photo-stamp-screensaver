@@ -70,8 +70,11 @@ mod tests {
             gps: Some(TOKYO),
             ..Default::default()
         };
-        let place =
-            Place { primary: "Tokyo Tower".into(), near: None, context: Some("Minato, Tokyo, Japan".into()) };
+        let place = Place {
+            primary: "Tokyo Tower".into(),
+            context: Some("Minato, Tokyo, Japan".into()),
+            ..Default::default()
+        };
         assert_eq!(
             lines(&info, Some(&place)),
             ["Tokyo Tower", "Minato, Tokyo, Japan", "Wed 12 Jun 2024, 22:32 JST"]

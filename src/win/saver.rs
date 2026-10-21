@@ -48,7 +48,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use super::decode::{Decoded, Decoder, Pixels};
 use super::{store, wide};
 use crate::library::Library;
-use crate::playlist::Rng;
 use crate::settings::{Caption, Corner, Settings};
 use crate::slide::{self, Motion};
 
@@ -239,7 +238,7 @@ struct Saver {
     target: Option<Target>,
     screens: Vec<Screen>,
     status: Status,
-    rng: Rng,
+    rng: fastrand::Rng,
 }
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
@@ -324,7 +323,7 @@ fn show(ex_style: u32, style: u32, (x, y, w, h): (i32, i32, i32, i32), parent: H
         target: None,
         screens,
         status,
-        rng: Rng::from_time(),
+        rng: fastrand::Rng::new(),
     };
     loop {
         let mut msg: MSG = unsafe { std::mem::zeroed() };

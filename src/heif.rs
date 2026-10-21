@@ -1,7 +1,7 @@
 //! HEIC/HEIF (iPhone photos) through libheif, linked statically, so it works without Windows' paid
 //! HEVC extension. libheif applies the container's rotation and mirroring while decoding.
 
-use libheif_rs::{ColorSpace, HeifContext, ItemId, LibHeif, RgbChroma};
+use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
 
 pub fn is_heif(name: &str) -> bool {
     name.rsplit_once('.')
@@ -28,17 +28,4 @@ pub fn decode(bytes: &[u8]) -> Result<Rgba, String> {
         pixels.extend_from_slice(&plane.data[y * plane.stride..][..row]);
     }
     Ok(Rgba { width: plane.width, height: plane.height, pixels })
-}
-
-/// The EXIF (TIFF) block: HEIF's starts with a 4-byte big-endian offset to the TIFF header.
-pub fn exif(bytes: &[u8]) -> Option<Vec<u8>> {
-    let ctx = HeifContext::read_from_bytes(bytes).ok()?;
-    let handle = ctx.primary_image_handle().ok()?;
-    let mut ids: [ItemId; 1] = [0];
-    if handle.metadata_block_ids(&mut ids, b"Exif") == 0 {
-        return None;
-    }
-    let block = handle.metadata(ids[0]).ok()?;
-    let skip = u32::from_be_bytes(block.get(..4)?.try_into().ok()?) as usize;
-    block.get(4 + skip..).map(<[u8]>::to_vec)
 }

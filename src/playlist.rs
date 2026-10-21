@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -138,39 +138,11 @@ impl State {
     }
 }
 
-/// SplitMix64: plenty random for picking photos, with no crate needed.
-pub struct Rng(u64);
-
-impl Rng {
-    pub fn from_time() -> Self {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
-        Self(nanos ^ (std::process::id() as u64).rotate_left(32))
-    }
-
-    pub fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e3779b97f4a7c15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
-        z ^ (z >> 31)
-    }
-
-    /// In `0..n` (n > 0).
-    pub fn below(&mut self, n: usize) -> usize {
-        (self.next_u64() % n as u64) as usize
-    }
-
-    /// In `0.0..1.0`.
-    pub fn unit(&mut self) -> f32 {
-        (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32
-    }
-}
-
 pub struct Playlist {
     entries: Vec<Entry>,
     order: Order,
     state: Option<State>,
-    rng: Rng,
+    rng: fastrand::Rng,
     /// Shuffled: the photos not shown yet in this round.
     unshown: Vec<usize>,
     /// In order: the next one.
@@ -184,7 +156,7 @@ impl Playlist {
         order: Order,
         dates: &HashMap<String, i64>,
         state: Option<State>,
-        rng: Rng,
+        rng: fastrand::Rng,
     ) -> Self {
         let mut next = 0;
         let mut unshown = Vec::new();
@@ -233,7 +205,7 @@ impl Playlist {
                     }
                     self.unshown = (0..self.entries.len()).collect();
                 }
-                let pick = self.rng.below(self.unshown.len());
+                let pick = self.rng.usize(..self.unshown.len());
                 let entry = self.entries[self.unshown.swap_remove(pick)].clone();
                 if let Some(s) = &self.state {
                     s.mark_shown(&entry.path);
@@ -303,12 +275,24 @@ mod tests {
         let state = || State::open(&dir.join("state.sqlite"), Path::new("D:\\Photos")).ok();
         let mut seen = HashSet::new();
         // First run: four photos, then the screensaver closes.
-        let mut list = Playlist::new(entries.clone(), Order::Shuffle, &HashMap::new(), state(), Rng(1));
+        let mut list = Playlist::new(
+            entries.clone(),
+            Order::Shuffle,
+            &HashMap::new(),
+            state(),
+            fastrand::Rng::with_seed(1),
+        );
         for _ in 0..4 {
             assert!(seen.insert(list.pick().unwrap().path));
         }
         // Next run carries on with the six not shown yet.
-        let mut list = Playlist::new(entries.clone(), Order::Shuffle, &HashMap::new(), state(), Rng(2));
+        let mut list = Playlist::new(
+            entries.clone(),
+            Order::Shuffle,
+            &HashMap::new(),
+            state(),
+            fastrand::Rng::with_seed(2),
+        );
         for _ in 0..6 {
             assert!(seen.insert(list.pick().unwrap().path), "a repeat before every photo was shown");
         }
@@ -325,22 +309,44 @@ mod tests {
             vec![entry("b/2.jpg", 30), entry("a.jpg", 20), entry("b/1.jpg", 10), entry("B/0.jpg", 40)];
         let names = |list: &mut Playlist, n| (0..n).map(|_| list.pick().unwrap().path).collect::<Vec<_>>();
 
-        let mut by_folder = Playlist::new(entries.clone(), Order::ByFolder, &HashMap::new(), state(), Rng(1));
+        let mut by_folder = Playlist::new(
+            entries.clone(),
+            Order::ByFolder,
+            &HashMap::new(),
+            state(),
+            fastrand::Rng::with_seed(1),
+        );
         assert_eq!(names(&mut by_folder, 2), ["a.jpg", "B/0.jpg"]);
-        let mut by_folder = Playlist::new(entries.clone(), Order::ByFolder, &HashMap::new(), state(), Rng(1));
+        let mut by_folder = Playlist::new(
+            entries.clone(),
+            Order::ByFolder,
+            &HashMap::new(),
+            state(),
+            fastrand::Rng::with_seed(1),
+        );
         assert_eq!(names(&mut by_folder, 3), ["b/1.jpg", "b/2.jpg", "a.jpg"]);
 
         // Taken dates beat modified times where known.
         let dates = HashMap::from([("B/0.jpg".to_owned(), 5)]);
-        let mut by_date = Playlist::new(entries, Order::ByDate, &dates, state(), Rng(1));
+        let mut by_date = Playlist::new(entries, Order::ByDate, &dates, state(), fastrand::Rng::with_seed(1));
         assert_eq!(names(&mut by_date, 5), ["B/0.jpg", "b/1.jpg", "a.jpg", "b/2.jpg", "B/0.jpg"]);
     }
 
     #[test]
     fn works_without_state() {
-        let mut list = Playlist::new(vec![entry("a.jpg", 1)], Order::Shuffle, &HashMap::new(), None, Rng(3));
+        let mut list = Playlist::new(
+            vec![entry("a.jpg", 1)],
+            Order::Shuffle,
+            &HashMap::new(),
+            None,
+            fastrand::Rng::with_seed(3),
+        );
         assert_eq!(list.pick().unwrap().path, "a.jpg");
         assert_eq!(list.pick().unwrap().path, "a.jpg");
-        assert!(Playlist::new(Vec::new(), Order::ByDate, &HashMap::new(), None, Rng(3)).pick().is_none());
+        assert!(
+            Playlist::new(Vec::new(), Order::ByDate, &HashMap::new(), None, fastrand::Rng::with_seed(3))
+                .pick()
+                .is_none()
+        );
     }
 }

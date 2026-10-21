@@ -24,7 +24,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::{folder, resource, store, wide};
-use crate::server::{self, CheckError, Me};
+use crate::places::Me;
+use crate::server::{self, CheckError};
 use crate::settings::{Caption, Corner, Field, MAX_SECONDS, MIN_SECONDS, Order, Settings, normalize_url};
 
 // As in assets/screensaver.rc.
@@ -198,7 +199,7 @@ fn start_test(dlg: HWND) {
 
 fn tested_message(result: &Result<Me, CheckError>) -> String {
     match result {
-        Ok(me) => me.summary(),
+        Ok(me) => server::summary(me),
         Err(e) => e.to_string(),
     }
 }
