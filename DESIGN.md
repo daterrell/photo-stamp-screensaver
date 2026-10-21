@@ -10,7 +10,7 @@ Status: round 1 built. Items marked **(assumed)** are defaults not yet confirmed
 ## Round 1 scope
 
 1. **Installer** (NSIS, built on Linux like photo-stamp's).
-2. **Settings dialog** (`.scr /c`): photo folder, seconds per photo, the caption (always / fading in and out /
+2. **Settings dialog** (`.scr /c`): photo folder, seconds per photo, order, the caption (always / fading in and out /
    never, and its corner), place server URL and device key (with a *Test connection* button that calls
    `GET /v1/me`).
 3. A placeholder `/s` (black screen naming the folder, closing on input) and `/p`, so the install can be
@@ -41,16 +41,25 @@ Windows runs the `.scr` with:
 | Formats | JPEG, PNG, WebP, HEIC; RAW via its embedded preview | Videos and other files skipped; hidden and dot folders skipped |
 | Already-stamped photos | Shown without an overlay | Detected by the `photo-stamp` XMP keyword |
 | Caption | A setting: always, fading in and out, or never; and the corner | The photo-stamp look: white, outlined, shadowed |
+| Order | A setting: shuffled (no repeats until all have shown, position kept across runs), by date taken, or by folder | |
+| Transitions | Crossfade with a slow pan/zoom (Ken Burns) | GPU-drawn (Direct2D) so it stays smooth on 4K |
+| Updates | Automatic, through the place server like photo-stamp | See below |
+| Publishing | As photo-stamp: package registry for main (beta), GitHub Release for v* tags | Needs `PACKAGES_TOKEN`, `GH_RELEASE_TOKEN` and a GitHub push mirror |
 | Monitors | A different photo on each, changes staggered | |
 | Timing | Seconds per photo only | Windows' own "Wait N minutes" decides when it starts |
 | Lookups | Done for the *next* photo while the current one shows | So the next photo is never held up by the server |
 | Server unreachable | Show the photo without a place; ask again next time it comes up **(assumed)** | No towns.sqlite fallback in v1 |
 
+## Auto-update (later round)
+
+- **Server:** photo-stamp-server relays only `photo-stamp-windows` today. It needs an app parameter (e.g.
+  `GET /v1/client/latest?app=screensaver&channel=…`) and a second package, `photo-stamp-screensaver-windows`.
+  That change is in the photo-stamp-server repo, and the protocol copy in photo-stamp too.
+- **Client:** the `.scr` is in System32, so an update needs admin rights. The plan is for setup to register a
+  scheduled task that runs as SYSTEM daily: it checks the server with a device key stored machine-wide, checks
+  the SHA-256, and swaps the file when the screensaver isn't running. Open: which device key the task uses (the
+  settings are per user and encrypted per user).
+
 ## Open questions
 
-1. **Order:** shuffle (without repeats until all have shown), by date, or by folder?
-2. **Transitions:** cut, crossfade, or a slow pan/zoom?
-3. **Updates:** auto-update through the place server like photo-stamp (needs a server-side channel for this
-   app), or manual reinstall?
-4. **Publishing:** the package registry and GitHub Releases as in photo-stamp (needs `PACKAGES_TOKEN` and
-   `GH_RELEASE_TOKEN` on this repo, and a GitHub mirror)?
+1. Auto-update: the machine-wide device key for the update task (see above).

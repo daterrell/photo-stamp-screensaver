@@ -16,7 +16,7 @@ use windows_sys::Win32::System::Registry::{
 };
 
 use super::wide;
-use crate::settings::{self, Caption, Corner, DEFAULT_SECONDS, MAX_SECONDS, MIN_SECONDS, Settings};
+use crate::settings::{self, Caption, Corner, DEFAULT_SECONDS, MAX_SECONDS, MIN_SECONDS, Order, Settings};
 
 const KEY: &str = r"Software\Photo Stamp Screensaver";
 
@@ -35,6 +35,7 @@ pub fn load() -> (Settings, bool) {
             .clamp(MIN_SECONDS, MAX_SECONDS),
         caption: Caption::from_index(get_dword("Caption").unwrap_or(0)),
         corner: Corner::from_index(get_dword("Corner").unwrap_or(0)),
+        order: Order::from_index(get_dword("Order").unwrap_or(0)),
     };
     let saved_before = get_dword("SecondsPerPhoto").is_some();
     if !saved_before && let Some((url, key)) = photo_stamp_server() {
@@ -57,6 +58,7 @@ pub fn save(s: &Settings) -> io::Result<()> {
     }
     set(REG_DWORD, "Caption", &s.caption.index().to_le_bytes())?;
     set(REG_DWORD, "Corner", &s.corner.index().to_le_bytes())?;
+    set(REG_DWORD, "Order", &s.order.index().to_le_bytes())?;
     // Last: its presence says settings were saved (see `load`).
     set(REG_DWORD, "SecondsPerPhoto", &s.seconds_per_photo.to_le_bytes())
 }

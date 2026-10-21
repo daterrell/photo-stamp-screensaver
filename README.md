@@ -32,6 +32,7 @@ again to update. The setup isn't code-signed, so SmartScreen asks once ("More in
 | Folder                | The top folder of photos; its subfolders are included. A network share is fine  |
 | Show each photo for   | 3 to 3600 seconds (10 by default)                                               |
 | Show where and when   | Always, fading in and out, or never; and in which corner (bottom left by default) |
+| Order                 | Shuffled (every photo once before any repeats), by date taken, or by folder     |
 | Address               | The place server, e.g. `https://places.example.com`. Empty: no places shown     |
 | Device key            | This PC's key (`photo-stamp-server device add …`). **Test connection** checks both |
 

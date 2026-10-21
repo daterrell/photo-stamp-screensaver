@@ -18,6 +18,18 @@ pub struct Settings {
     pub seconds_per_photo: u32,
     pub caption: Caption,
     pub corner: Corner,
+    pub order: Order,
+}
+
+/// Which photo comes next.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Order {
+    /// Random, every photo once before any repeats.
+    #[default]
+    Shuffle,
+    ByDate,
+    /// Folder by folder, by name within each.
+    ByFolder,
 }
 
 /// Whether where and when a photo was taken shows over it.
@@ -43,6 +55,20 @@ impl Caption {
     /// In the order of the dialog's list; the position is what's saved.
     pub const ALL: [(Caption, &str); 3] =
         [(Caption::Always, "Always"), (Caption::Fade, "Fading in and out"), (Caption::Hidden, "Never")];
+
+    pub fn index(self) -> u32 {
+        Self::ALL.iter().position(|(c, _)| *c == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_index(i: u32) -> Self {
+        Self::ALL.get(i as usize).map_or_else(Self::default, |(c, _)| *c)
+    }
+}
+
+impl Order {
+    /// In the order of the dialog's list; the position is what's saved.
+    pub const ALL: [(Order, &str); 3] =
+        [(Order::Shuffle, "Shuffled"), (Order::ByDate, "By date taken"), (Order::ByFolder, "By folder")];
 
     pub fn index(self) -> u32 {
         Self::ALL.iter().position(|(c, _)| *c == self).unwrap_or(0) as u32
@@ -80,6 +106,7 @@ impl Default for Settings {
             seconds_per_photo: DEFAULT_SECONDS,
             caption: Caption::default(),
             corner: Corner::default(),
+            order: Order::default(),
         }
     }
 }
@@ -172,6 +199,7 @@ mod tests {
             seconds_per_photo: 8,
             caption: Caption::Fade,
             corner: Corner::TopRight,
+            order: Order::ByDate,
         };
         assert_eq!(
             s.validated(),
@@ -182,6 +210,7 @@ mod tests {
                 seconds_per_photo: 8,
                 caption: Caption::Fade,
                 corner: Corner::TopRight,
+                order: Order::ByDate,
             })
         );
     }
@@ -212,6 +241,9 @@ mod tests {
         }
         for (c, _) in Corner::ALL {
             assert_eq!(Corner::from_index(c.index()), c);
+        }
+        for (o, _) in Order::ALL {
+            assert_eq!(Order::from_index(o.index()), o);
         }
         assert_eq!(Caption::from_index(99), Caption::Always);
         assert_eq!(Corner::from_index(99), Corner::BottomLeft);

@@ -1,5 +1,5 @@
 //! The settings dialog (`.scr /c`), laid out in `assets/screensaver.rc`: the photo folder, how long
-//! each photo shows, whether and where the caption shows, and the place server's address and device
+//! each photo shows and in what order, whether and where the caption shows, and the place server's address and device
 //! key, with a connection test.
 
 use std::path::Path;
@@ -25,7 +25,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use super::{folder, resource, store, wide};
 use crate::server::{self, CheckError, Me};
-use crate::settings::{Caption, Corner, Field, MAX_SECONDS, MIN_SECONDS, Settings, normalize_url};
+use crate::settings::{Caption, Corner, Field, MAX_SECONDS, MIN_SECONDS, Order, Settings, normalize_url};
 
 // As in assets/screensaver.rc.
 const IDD_SETTINGS: u16 = 101;
@@ -41,6 +41,7 @@ const IDC_STATUS: i32 = 1009;
 const IDC_VERSION: i32 = 1010;
 const IDC_CAPTION: i32 = 1011;
 const IDC_CORNER: i32 = 1012;
+const IDC_ORDER: i32 = 1013;
 
 /// Posted by the connection test's thread; `lparam` is a `Box<Result<Me, CheckError>>`.
 const WM_TESTED: u32 = WM_APP + 1;
@@ -122,6 +123,7 @@ fn init(dlg: HWND) {
     }
     fill_list(dlg, IDC_CAPTION, &Caption::ALL.map(|(_, label)| label), settings.caption.index());
     fill_list(dlg, IDC_CORNER, &Corner::ALL.map(|(_, label)| label), settings.corner.index());
+    fill_list(dlg, IDC_ORDER, &Order::ALL.map(|(_, label)| label), settings.order.index());
     caption_changed(dlg);
     set_text(dlg, IDC_FOLDER, &settings.folder);
     set_text(dlg, IDC_URL, &settings.server_url);
@@ -211,6 +213,7 @@ fn ok(dlg: HWND) {
         seconds_per_photo: if seconds_ok != 0 { seconds } else { 0 },
         caption: Caption::from_index(selected(dlg, IDC_CAPTION)),
         corner: Corner::from_index(selected(dlg, IDC_CORNER)),
+        order: Order::from_index(selected(dlg, IDC_ORDER)),
     };
     let settings = match typed.validated() {
         Ok(s) => s,

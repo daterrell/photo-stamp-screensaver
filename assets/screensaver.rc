@@ -23,6 +23,7 @@
 #define IDC_VERSION 1010
 #define IDC_CAPTION 1011
 #define IDC_CORNER 1012
+#define IDC_ORDER 1013
 
 1 ICON "photo-stamp.ico"
 1 24 "screensaver.manifest"
@@ -54,13 +55,13 @@ BEGIN
     END
 END
 
-IDD_SETTINGS DIALOGEX 0, 0, 300, 237
+IDD_SETTINGS DIALOGEX 0, 0, 300, 257
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "Photo Stamp screensaver"
 FONT 9, "Segoe UI", 400, 0, 1
 BEGIN
-    GROUPBOX        "Photos", -1, 7, 7, 286, 84
+    GROUPBOX        "Photos", -1, 7, 7, 286, 104
     LTEXT           "&Folder (its subfolders are included too):", -1, 15, 20, 270, 8
     EDITTEXT        IDC_FOLDER, 15, 31, 212, 14, ES_AUTOHSCROLL
     PUSHBUTTON      "&Browse...", IDC_BROWSE, 231, 31, 54, 14
@@ -71,18 +72,20 @@ BEGIN
     LTEXT           "Show &where and when", -1, 15, 72, 70, 8
     COMBOBOX        IDC_CAPTION, 86, 70, 90, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     COMBOBOX        IDC_CORNER, 182, 70, 70, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Order", -1, 15, 92, 70, 8
+    COMBOBOX        IDC_ORDER, 86, 90, 90, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
 
-    GROUPBOX        "Place server", -1, 7, 97, 286, 110
-    LTEXT           "Where and when each photo was taken comes from the family's place server. Leave it empty to show photos without places.", -1, 15, 109, 270, 16
-    LTEXT           "&Address:", -1, 15, 132, 48, 8
-    EDITTEXT        IDC_URL, 66, 130, 219, 14, ES_AUTOHSCROLL
-    LTEXT           "Device &key:", -1, 15, 151, 48, 8
-    EDITTEXT        IDC_KEY, 66, 149, 179, 14, ES_AUTOHSCROLL | ES_PASSWORD
-    AUTOCHECKBOX    "&Show", IDC_SHOWKEY, 251, 151, 34, 10
-    PUSHBUTTON      "&Test connection", IDC_TEST, 66, 168, 70, 14
-    LTEXT           "", IDC_STATUS, 66, 186, 219, 18
+    GROUPBOX        "Place server", -1, 7, 117, 286, 110
+    LTEXT           "Where and when each photo was taken comes from the family's place server. Leave it empty to show photos without places.", -1, 15, 129, 270, 16
+    LTEXT           "&Address:", -1, 15, 152, 48, 8
+    EDITTEXT        IDC_URL, 66, 150, 219, 14, ES_AUTOHSCROLL
+    LTEXT           "Device &key:", -1, 15, 171, 48, 8
+    EDITTEXT        IDC_KEY, 66, 169, 179, 14, ES_AUTOHSCROLL | ES_PASSWORD
+    AUTOCHECKBOX    "&Show", IDC_SHOWKEY, 251, 171, 34, 10
+    PUSHBUTTON      "&Test connection", IDC_TEST, 66, 188, 70, 14
+    LTEXT           "", IDC_STATUS, 66, 206, 219, 18
 
-    LTEXT           "", IDC_VERSION, 7, 219, 150, 8, WS_DISABLED
-    DEFPUSHBUTTON   "OK", IDOK, 185, 216, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 243, 216, 50, 14
+    LTEXT           "", IDC_VERSION, 7, 239, 150, 8, WS_DISABLED
+    DEFPUSHBUTTON   "OK", IDOK, 185, 236, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 243, 236, 50, 14
 END
