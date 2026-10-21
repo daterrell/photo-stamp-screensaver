@@ -2,7 +2,18 @@
 //! each was taken from the family's place server. See README.md.
 
 pub mod args;
+pub mod cache;
+pub mod caption;
+pub mod exif;
+pub mod geo;
+#[cfg(feature = "heif")]
+pub mod heif;
+pub mod library;
+pub mod log;
+pub mod places;
+pub mod playlist;
 pub mod server;
 pub mod settings;
+pub mod slide;
 #[cfg(windows)]
 pub mod win;
