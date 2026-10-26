@@ -51,6 +51,11 @@ fn hidden(_: &walkdir::DirEntry) -> bool {
     false
 }
 
+/// A file's modified time, as seconds (what the cache keys photos by, with their size).
+pub fn mtime(meta: &std::fs::Metadata) -> i64 {
+    meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64)
+}
+
 /// Every photo under `folder`, skipping hidden files and folders.
 pub fn scan(folder: &Path) -> Vec<Entry> {
     let walk = walkdir::WalkDir::new(folder).follow_links(true).into_iter().filter_entry(|e| {
@@ -66,14 +71,13 @@ pub fn scan(folder: &Path) -> Vec<Entry> {
             let rel = e.path().strip_prefix(folder).ok()?;
             let path =
                 rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
-            let mtime = meta.modified().ok()?.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
-            Some(Entry { path, size: meta.len(), mtime })
+            Some(Entry { path, size: meta.len(), mtime: mtime(&meta) })
         })
         .collect()
 }
 
 /// Folder by folder (case-insensitive), the photos of a folder before its subfolders'.
-fn folder_order(a: &str, b: &str) -> Ordering {
+pub fn folder_order(a: &str, b: &str) -> Ordering {
     let (da, fa) = a.rsplit_once('/').unwrap_or(("", a));
     let (db, fb) = b.rsplit_once('/').unwrap_or(("", b));
     da.to_lowercase().cmp(&db.to_lowercase()).then_with(|| fa.to_lowercase().cmp(&fb.to_lowercase()))

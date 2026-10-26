@@ -1,7 +1,9 @@
 //! The Windows side: the settings dialog, where settings are kept, decoding and drawing the photos.
 
+pub mod captions;
 mod decode;
 pub mod dialog;
+mod draw;
 mod folder;
 pub mod saver;
 pub mod store;

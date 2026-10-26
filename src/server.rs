@@ -7,6 +7,9 @@ use std::time::Duration;
 use crate::places::{ClientUpdate, GpsPoint, Me, PlaceReply, PlaceRequest};
 
 pub const VERSION: &str = env!("PSS_VERSION");
+/// The screensaver's builds, and the caption editor's, as the place server names them.
+pub const SCREENSAVER: &str = "screensaver";
+pub const CAPTIONS: &str = "screensaver-captions";
 
 /// What the settings dialog says after a connection test.
 pub fn summary(me: &Me) -> String {
@@ -79,10 +82,10 @@ impl Client {
         json(&body_of(resp)?, "/v1/place")
     }
 
-    /// The screensaver's newest build on `channel` ("stable" or "beta"); `None` when none is
-    /// published.
-    pub fn latest(&self, channel: &str) -> Result<Option<ClientUpdate>, CheckError> {
-        let path = format!("/v1/client/latest?app=screensaver&channel={channel}");
+    /// The newest build of `app` (`SCREENSAVER` or `CAPTIONS`) on `channel` ("stable" or "beta");
+    /// `None` when none is published.
+    pub fn latest(&self, app: &str, channel: &str) -> Result<Option<ClientUpdate>, CheckError> {
+        let path = format!("/v1/client/latest?app={app}&channel={channel}");
         let resp = self.agent.get(format!("{}{path}", self.url)).header("Authorization", &self.auth).call();
         let mut resp = resp.map_err(|e| CheckError::Unreachable(e.to_string()))?;
         if resp.status().as_u16() == 204 {
@@ -215,7 +218,7 @@ pub(crate) mod tests {
             _ => (204, Vec::new()),
         });
         let client = Client::new(&url, "k", Duration::from_secs(5));
-        assert_eq!(client.latest("stable").unwrap().unwrap().version, "0.2.0");
-        assert_eq!(client.latest("beta").unwrap(), None);
+        assert_eq!(client.latest(SCREENSAVER, "stable").unwrap().unwrap().version, "0.2.0");
+        assert_eq!(client.latest(SCREENSAVER, "beta").unwrap(), None);
     }
 }

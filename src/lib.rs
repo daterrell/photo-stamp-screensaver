@@ -10,6 +10,7 @@ pub mod geo;
 pub mod heif;
 pub mod library;
 pub mod log;
+pub mod photos;
 pub mod places;
 pub mod playlist;
 pub mod server;
@@ -18,3 +19,4 @@ pub mod slide;
 pub mod update;
 #[cfg(windows)]
 pub mod win;
+pub mod xmp;

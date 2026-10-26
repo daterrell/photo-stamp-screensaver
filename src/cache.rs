@@ -19,6 +19,8 @@ use crate::exif::Info;
 use crate::places::{GpsPoint, Place};
 
 pub const FILE_NAME: &str = ".photo-stamp-screensaver.sqlite";
+/// Photos read by older versions don't know their caption kept in the photo: read them again.
+const SCHEMA: &str = "2";
 /// Beyond this many answers the oldest are dropped.
 const MAX_ANSWERS: i64 = 200_000;
 
@@ -77,17 +79,24 @@ impl Cache {
         let conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "DELETE")?;
+        conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)", [])?;
+        let schema: Option<String> =
+            conn.query_row("SELECT value FROM meta WHERE key = 'schema'", [], |r| r.get(0)).optional()?;
+        if schema.as_deref() != Some(SCHEMA) {
+            conn.execute_batch("DROP TABLE IF EXISTS photo")?;
+        }
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS photo(
                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL,
                taken TEXT, offset_s INTEGER, gps_time INTEGER, lat REAL, lon REAL,
-               orientation INTEGER NOT NULL, stamped INTEGER NOT NULL);
+               orientation INTEGER NOT NULL, stamped INTEGER NOT NULL, caption TEXT);
              CREATE TABLE IF NOT EXISTS answer(
                key TEXT PRIMARY KEY, place TEXT, data_version TEXT NOT NULL, rev INTEGER NOT NULL,
                at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS answer_at ON answer(at);
-             CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);",
+             CREATE TABLE IF NOT EXISTS edit(path TEXT PRIMARY KEY, lines TEXT NOT NULL, at INTEGER NOT NULL);",
         )?;
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schema', ?1)", [SCHEMA])?;
         // Proves it can be written, not just read.
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('opened', ?1)", [now().to_string()])?;
         Ok(Self { conn: Mutex::new(conn), path: path.to_owned() })
@@ -97,7 +106,7 @@ impl Cache {
     pub fn photo(&self, path: &str, size: u64, mtime: i64) -> Option<Info> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT taken, offset_s, gps_time, lat, lon, orientation, stamped FROM photo
+            "SELECT taken, offset_s, gps_time, lat, lon, orientation, stamped, caption FROM photo
              WHERE path = ?1 AND size = ?2 AND mtime = ?3",
             params![path, size as i64, mtime],
             |r| {
@@ -114,6 +123,7 @@ impl Cache {
                     gps,
                     orientation: r.get::<_, i64>(5)? as u8,
                     stamped: r.get::<_, i64>(6)? != 0,
+                    caption: r.get::<_, Option<String>>(7)?.and_then(|c| serde_json::from_str(&c).ok()),
                 })
             },
         )
@@ -125,8 +135,9 @@ impl Cache {
     pub fn put_photo(&self, path: &str, size: u64, mtime: i64, info: &Info) {
         let conn = self.conn.lock().unwrap();
         let result = conn.execute(
-            "INSERT OR REPLACE INTO photo(path, size, mtime, taken, offset_s, gps_time, lat, lon, orientation, stamped)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO photo(path, size, mtime, taken, offset_s, gps_time, lat, lon, orientation, stamped,
+               caption)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 path,
                 size as i64,
@@ -138,6 +149,7 @@ impl Cache {
                 info.gps.map(|g| g.lon),
                 info.orientation as i64,
                 info.stamped as i64,
+                info.caption.as_ref().and_then(|c| serde_json::to_string(c).ok()),
             ],
         );
         if let Err(e) = result {
@@ -161,6 +173,36 @@ impl Cache {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// A caption edited by hand for the photo at `path` (empty: no caption at all).
+    pub fn edit(&self, path: &str) -> Option<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT lines FROM edit WHERE path = ?1", [path], |r| r.get::<_, String>(0))
+            .optional()
+            .ok()
+            .flatten()
+            .and_then(|l| serde_json::from_str(&l).ok())
+    }
+
+    /// The photos with a caption edited by hand.
+    pub fn edited(&self) -> std::collections::HashSet<String> {
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare("SELECT path FROM edit") else { return Default::default() };
+        stmt.query_map([], |r| r.get(0)).map(|rows| rows.filter_map(Result::ok).collect()).unwrap_or_default()
+    }
+
+    /// Keeps an edited caption (`None`: back to the automatic one).
+    pub fn put_edit(&self, path: &str, lines: Option<&[String]>) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        match lines {
+            Some(lines) => conn.execute(
+                "INSERT OR REPLACE INTO edit(path, lines, at) VALUES(?1, ?2, ?3)",
+                params![path, serde_json::to_string(lines).unwrap_or_default(), now()],
+            ),
+            None => conn.execute("DELETE FROM edit WHERE path = ?1", [path]),
+        }
+        .map(drop)
     }
 
     pub fn answer(&self, at: GpsPoint) -> Option<Answer> {
@@ -242,6 +284,7 @@ mod tests {
             gps: Some(GpsPoint { lat: 36.5655, lon: -121.9453 }),
             orientation: 6,
             stamped: false,
+            caption: Some(vec!["Pebble Beach".into()]),
         };
         cache.put_photo("trip/a.jpg", 100, 5, &info);
         assert_eq!(cache.photo("trip/a.jpg", 100, 5), Some(info.clone()));
@@ -258,9 +301,42 @@ mod tests {
         cache.put_answer(at, &answer);
         // The same spot to ~11 m.
         assert_eq!(cache.answer(GpsPoint { lat: 36.56549, lon: -121.94528 }), Some(answer));
+        cache.put_edit("trip/a.jpg", Some(&["Home".into()])).unwrap();
+        assert_eq!(cache.edit("trip/a.jpg"), Some(vec!["Home".to_owned()]));
+        assert_eq!(cache.edited().into_iter().collect::<Vec<_>>(), ["trip/a.jpg"]);
         drop(cache);
         // Kept across runs.
-        assert!(Cache::open(&dir, &dir.join("fallback")).unwrap().photo("trip/a.jpg", 100, 5).is_some());
+        let cache = Cache::open(&dir, &dir.join("fallback")).unwrap();
+        assert!(cache.photo("trip/a.jpg", 100, 5).is_some());
+        cache.put_edit("trip/a.jpg", None).unwrap();
+        assert_eq!(cache.edit("trip/a.jpg"), None);
+    }
+
+    #[test]
+    fn photos_read_by_older_versions_are_read_again() {
+        let dir = temp("schema");
+        {
+            let conn = Connection::open(dir.join(FILE_NAME)).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE photo(path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL,
+                   taken TEXT, offset_s INTEGER, gps_time INTEGER, lat REAL, lon REAL,
+                   orientation INTEGER NOT NULL, stamped INTEGER NOT NULL);
+                 INSERT INTO photo VALUES('a.jpg', 1, 2, NULL, NULL, NULL, NULL, NULL, 1, 0);
+                 CREATE TABLE answer(key TEXT PRIMARY KEY, place TEXT, data_version TEXT NOT NULL,
+                   rev INTEGER NOT NULL, at INTEGER NOT NULL);
+                 INSERT INTO answer VALUES('k', NULL, 'v1', 1, 0);",
+            )
+            .unwrap();
+        }
+        let cache = Cache::open(&dir, &dir.join("fallback")).unwrap();
+        assert_eq!(cache.photo("a.jpg", 1, 2), None);
+        let answers: i64 =
+            cache.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM answer", [], |r| r.get(0)).unwrap();
+        assert_eq!(answers, 1);
+        cache.put_photo("a.jpg", 1, 2, &Info::default());
+        drop(cache);
+        // Once is enough.
+        assert!(Cache::open(&dir, &dir.join("fallback")).unwrap().photo("a.jpg", 1, 2).is_some());
     }
 
     #[cfg(unix)]

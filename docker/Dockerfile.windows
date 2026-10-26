@@ -80,6 +80,8 @@ ARG PSS_VERSION=0.0.0-dev
 ENV PSS_VERSION=$PSS_VERSION
 RUN cargo build --release --locked --features heif --target x86_64-pc-windows-gnu
 
-# Just the .scr, for `docker buildx build --target scr --output type=local,dest=…` (used by CI).
+# Just the programs (the .scr and the caption editor), for `docker buildx build --target scr
+# --output type=local,dest=…` (used by CI).
 FROM scratch AS scr
 COPY --from=build /src/target/x86_64-pc-windows-gnu/release/photo-stamp-screensaver.exe /photo-stamp-screensaver.scr
+COPY --from=build /src/target/x86_64-pc-windows-gnu/release/photo-stamp-captions.exe /photo-stamp-captions.exe

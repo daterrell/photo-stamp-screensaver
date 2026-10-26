@@ -27,11 +27,21 @@ pub struct Info {
     pub orientation: u8,
     /// photo-stamp's caption is already in the pixels.
     pub stamped: bool,
+    /// A caption edited by hand and kept in the photo (`xmp.rs`); empty: none at all.
+    pub caption: Option<Vec<String>>,
 }
 
 impl Default for Info {
     fn default() -> Self {
-        Self { taken: None, offset: None, gps_time: None, gps: None, orientation: 1, stamped: false }
+        Self {
+            taken: None,
+            offset: None,
+            gps_time: None,
+            gps: None,
+            orientation: 1,
+            stamped: false,
+            caption: None,
+        }
     }
 }
 
@@ -43,13 +53,14 @@ impl Info {
             .map(|e| from_exif(&e))
             .unwrap_or_default();
         info.stamped = has_marker(bytes);
+        info.caption = crate::xmp::find_caption(bytes);
         info
     }
 }
 
 /// Whether photo-stamp's XMP keyword is in these bytes.
 pub fn has_marker(bytes: &[u8]) -> bool {
-    bytes.windows(STAMPED_MARKER.len()).any(|w| w == STAMPED_MARKER)
+    memchr::memmem::find(bytes, STAMPED_MARKER).is_some()
 }
 
 fn ascii(exif: &Exif, tag: Tag) -> Option<String> {

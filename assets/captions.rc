@@ -1,0 +1,33 @@
+// Windows resources for photo-stamp-captions.exe, the caption editor (compiled by build.rs with
+// mingw's windres): the icon, the manifest and the file properties.
+#include <windows.h>
+
+#ifndef VER_MAJOR
+#define VER_MAJOR 0
+#define VER_MINOR 0
+#define VER_PATCH 0
+#endif
+
+1 ICON "photo-stamp.ico"
+1 24 "screensaver.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Photo Stamp captions"
+            VALUE "ProductName", "Photo Stamp screensaver"
+            VALUE "OriginalFilename", "photo-stamp-captions.exe"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

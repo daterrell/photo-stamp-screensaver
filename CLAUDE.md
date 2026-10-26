@@ -17,7 +17,11 @@ non-technical family, as with photo-stamp.
   setup. A quick local `.scr` without HEIC: `cargo build --release --target x86_64-pc-windows-gnu`.
 - Try the slideshow on the Windows side with `/w` (a normal window input doesn't close) and `PSS_FOLDER`,
   `PSS_DATA_DIR`, so a test touches neither the real settings' folder nor the real per-PC state. Copy photos
-  into a scratch folder: the screensaver writes its cache file into whatever folder it shows.
+  into a scratch folder: the screensaver writes its cache file into whatever folder it shows, and the caption
+  editor (`photo-stamp-captions.exe`, same variables) writes into the photos themselves.
+- Drive the caption editor with messages sent to its own controls (`WM_SETTEXT` to the edit box, `BM_CLICK`
+  to buttons, keys posted to the list), never SendKeys: that types into whichever window is in front, which
+  may be the user's terminal. The managed UI Automation client sees its controls only as panes.
 
 ## Gotchas
 

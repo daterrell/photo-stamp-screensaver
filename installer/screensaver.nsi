@@ -1,12 +1,13 @@
 ; Photo Stamp screensaver setup: installs photo-stamp-screensaver.scr into System32 (the only place
 ; Screen Saver Settings lists screensavers from, hence admin rights), makes it this user's
 ; screensaver and opens Screen Saver Settings, where "Settings..." sets the photo folder and the
-; place server.
+; place server. The caption editor, photo-stamp-captions.exe, goes into Program Files, with Start
+; menu and desktop shortcuts (photos dropped on the shortcut open in it).
 ;
 ; Built on Linux by scripts/build-windows.sh:
 ;   makensis -WX -DVERSION=0.1.0 -DVIVERSION=0.1.0.0 -DSCR=../dist/photo-stamp-screensaver.scr \
-;            -DTOWNS=../dist/towns.sqlite -DOUTFILE=../dist/photo-stamp-screensaver-setup.exe \
-;            installer/screensaver.nsi
+;            -DCAPTIONS=../dist/photo-stamp-captions.exe -DTOWNS=../dist/towns.sqlite \
+;            -DOUTFILE=../dist/photo-stamp-screensaver-setup.exe installer/screensaver.nsi
 ;
 ; Silent install (tests): photo-stamp-screensaver-setup.exe /S (doesn't open Screen Saver Settings).
 ;
@@ -29,6 +30,9 @@ Unicode true
 !ifndef SCR
   !define SCR "../dist/photo-stamp-screensaver.scr"
 !endif
+!ifndef CAPTIONS
+  !define CAPTIONS "../dist/photo-stamp-captions.exe"
+!endif
 !ifndef TOWNS
   !define TOWNS "../dist/towns.sqlite"
 !endif
@@ -43,12 +47,14 @@ Unicode true
 !define UKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PhotoStampScreensaver"
 !define DESKTOP "Control Panel\Desktop"
 !define SHORTCUT "$SMPROGRAMS\Photo Stamp screensaver settings.lnk"
+!define CAPTIONSEXE "photo-stamp-captions.exe"
+!define CAPTIONSLNK "Photo Stamp captions.lnk"
 
 Name "${APP}"
 OutFile "${OUTFILE}"
 RequestExecutionLevel admin
-; The uninstaller and the towns database (places while the place server can't be reached) live
-; here; the screensaver itself is in System32.
+; The uninstaller, the caption editor and the towns database (places while the place server can't
+; be reached) live here; the screensaver itself is in System32.
 InstallDir "$PROGRAMFILES64\Photo Stamp Screensaver"
 SetCompressor /SOLID lzma
 BrandingText "${APP} ${VERSION}"
@@ -67,7 +73,7 @@ VIAddVersionKey "LegalCopyright" "MIT License"
 !define MUI_UNICON "../assets/photo-stamp.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TEXT "This installs a screensaver that shows your photos, with where and when each one was taken.$\r$\n$\r$\nYour photos are never changed.$\r$\n$\r$\nWindows will ask for permission, because screensavers are installed for everyone on this PC."
-!define MUI_FINISHPAGE_TEXT "The Photo Stamp screensaver is installed and turned on.$\r$\n$\r$\nIn Screen Saver Settings, click Settings... to choose your photo folder."
+!define MUI_FINISHPAGE_TEXT "The Photo Stamp screensaver is installed and turned on.$\r$\n$\r$\nIn Screen Saver Settings, click Settings... to choose your photo folder.$\r$\n$\r$\nTo change what a photo's caption says, use Photo Stamp captions on the desktop."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open Screen Saver Settings"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenScreenSaverSettings
@@ -99,6 +105,8 @@ Section "Install"
 
   SetOutPath "$INSTDIR"
   File "/oname=towns.sqlite" "${TOWNS}"
+  ; An open caption editor holds the file: NSIS asks to retry.
+  File "/oname=${CAPTIONSEXE}" "${CAPTIONS}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "${UKEY}" "DisplayName" "${APP}"
   WriteRegStr HKLM "${UKEY}" "DisplayVersion" "${VERSION}"
@@ -113,6 +121,9 @@ Section "Install"
 
   SetShellVarContext all
   CreateShortcut "${SHORTCUT}" "${SCRPATH}" "/c" "${SCRPATH}" 0
+  ; Photos dropped on either shortcut open in the editor.
+  CreateShortcut "$SMPROGRAMS\${CAPTIONSLNK}" "$INSTDIR\${CAPTIONSEXE}"
+  CreateShortcut "$DESKTOP\${CAPTIONSLNK}" "$INSTDIR\${CAPTIONSEXE}"
 
   ; Automatic updates: a scheduled task (as SYSTEM), using this user's place server if they have one
   ; (or photo-stamp's). The .scr does it, so it's the same code the settings dialog uses.
@@ -162,6 +173,11 @@ Section "Uninstall"
 
   SetShellVarContext all
   Delete "${SHORTCUT}"
+  Delete "$SMPROGRAMS\${CAPTIONSLNK}"
+  Delete "$DESKTOP\${CAPTIONSLNK}"
+  Delete /REBOOTOK "$INSTDIR\${CAPTIONSEXE}"
+  Delete /REBOOTOK "$INSTDIR\${CAPTIONSEXE}.old"
+  Delete "$INSTDIR\${CAPTIONSEXE}.new"
   Delete "$INSTDIR\towns.sqlite"
   Delete "$INSTDIR\towns.sqlite.old"
   Delete "$INSTDIR\towns.sqlite.new"
