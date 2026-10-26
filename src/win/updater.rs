@@ -1,6 +1,7 @@
 //! Automatic updates on Windows: a scheduled task runs `photo-stamp-screensaver.scr /update` as
 //! SYSTEM daily and after startup; setup registers it (`/install`) and removes it (`/uninstall`);
-//! the settings dialog hands new server settings to an elevated `/updates-set <file>`.
+//! the settings dialog hands new server settings to an elevated `/updates-set <file>`. The task
+//! updates the caption editor in Program Files too.
 
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -8,11 +9,13 @@ use std::process::Command;
 use std::time::Duration;
 
 use super::{install_dir, store};
-use crate::server::{Client, VERSION};
+use crate::server::{CAPTIONS, Client, SCREENSAVER, VERSION};
 use crate::settings::{Updates, normalize_url};
 use crate::update::{self, Outcome};
 
 pub const TASK_NAME: &str = "Photo Stamp Screensaver update";
+/// The caption editor, beside the uninstaller.
+const CAPTIONS_EXE: &str = "photo-stamp-captions.exe";
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\PhotoStampScreensaver";
 /// Downloads are ~20 MB; allow a slow line.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -45,7 +48,8 @@ pub fn run() -> i32 {
     };
     update::tidy(&exe);
     let client = Client::new(&updates.server_url, &updates.device_key, DOWNLOAD_TIMEOUT);
-    let program = update::update_program(&client, updates.channel.server_name(), VERSION, &exe);
+    let channel = updates.channel.server_name();
+    let program = update::update_program(&client, SCREENSAVER, channel, VERSION, &exe);
     let summary = match &program {
         Ok(Outcome::Updated(v)) => {
             let _ = set_installed_version(v);
@@ -55,6 +59,7 @@ pub fn run() -> i32 {
         Err(e) => format!("Couldn't update on {}: {e}", now()),
     };
     crate::log::line(&summary);
+    update_captions(&client, channel);
     let towns = install_dir().join("towns.sqlite");
     update::tidy(&towns);
     match update::update_towns(&client, &towns) {
@@ -64,6 +69,27 @@ pub fn run() -> i32 {
     }
     store::record_update_check(&summary);
     i32::from(program.is_err())
+}
+
+/// The caption editor, when setup installed it. A server that doesn't know it yet only means it
+/// waits.
+fn update_captions(client: &Client, channel: &str) {
+    let exe = install_dir().join(CAPTIONS_EXE);
+    if !exe.is_file() {
+        return;
+    }
+    update::tidy(&exe);
+    let current = store::captions_version().unwrap_or_else(|| VERSION.to_owned());
+    match update::update_program(client, CAPTIONS, channel, &current, &exe) {
+        Ok(Outcome::Updated(v)) => {
+            crate::log::line(&format!("caption editor updated to {v}"));
+            if let Err(e) = store::set_captions_version(&v) {
+                crate::log::line(&format!("couldn't note the caption editor's version: {e}"));
+            }
+        }
+        Ok(_) => {}
+        Err(e) => crate::log::line(&format!("caption editor: {e}")),
+    }
 }
 
 /// Settings > Apps shows the version that's installed now.
@@ -105,6 +131,12 @@ pub fn install() -> i32 {
         && let Err(e) = store::save_machine_updates(&u)
     {
         crate::log::line(&format!("couldn't keep the update settings: {e}"));
+    }
+    // Setup installs the editor built with this screensaver.
+    if install_dir().join(CAPTIONS_EXE).is_file()
+        && let Err(e) = store::set_captions_version(VERSION)
+    {
+        crate::log::line(&format!("couldn't note the caption editor's version: {e}"));
     }
     match register_task() {
         Ok(()) => 0,

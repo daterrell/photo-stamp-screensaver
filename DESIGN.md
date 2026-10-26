@@ -5,7 +5,7 @@ was taken shown as an overlay, the same caption photo-stamp would burn in. Photo
 answers come from the existing photo-stamp-server (`/v1`, `Authorization: Bearer <device key>`) and are cached in
 a hidden SQLite file in the photo folder.
 
-Status: rounds 1 (setup, settings), 2 (the slideshow) and 3 (auto-update) built.
+Status: rounds 1 (setup, settings), 2 (the slideshow), 3 (auto-update) and 4 (the caption editor) built.
 
 ## Round 1 scope
 
@@ -63,3 +63,15 @@ Windows runs the `.scr` with:
   copies the installing user's (or photo-stamp's), and the settings dialog offers an elevated `/updates-set` when
   saved settings differ. Builds aren't signed; the server is trusted, and only an administrator chooses it.
   Builds from a server that ignores `app` (offering photo-stamp's zip) and non-programs are refused.
+
+## The caption editor (round 4)
+
+| Topic | Choice | Notes |
+|-------|--------|-------|
+| Form | A separate small program, `photo-stamp-captions.exe` in Program Files, with Start menu and desktop shortcuts | Plain Win32 like the settings dialog; same crate, a second binary. Drag and drop on the window or the shortcut |
+| What's edited | The caption's lines, as free text, one line a row | As photo-stamp's Edit stamp. Empty means no caption |
+| Where it's kept | Both: in the photo (XMP `pss:Caption`, an `rdf:Seq` of lines, namespace `https://forgejo.terrell.ltd/dave/photo-stamp-screensaver/ns/1.0/`) and in the folder's cache (`edit` table, by relative path) | The photo's copy travels with it; the cache's covers every format and every PC sharing the folder |
+| Writing photos | JPEG (APP1 XMP) and PNG (iTXt) through `img-parts`; the rest of the XMP packet kept as it was (`quick-xml`) | HEIC, WebP, TIFF: cache only. Written beside, read back and compared, swapped in with `ReplaceFileW`, modified time kept. Going back to automatic restores the file byte for byte |
+| Precedence | Cache, then the photo's, then automatic; photo-stamp-stamped photos never get one | The cache's photo rows are refreshed after a write, since the kept modified time could hide a same-length change |
+| Browsing | Thumbnails from Windows (`IShellItemImageFactory`), else decoded (HEIC); a virtual list, 400 kept | A folder of tens of thousands opens at once |
+| Updates | The update task updates it too: `app=screensaver-captions`, published as `photo-stamp-captions-<v>.exe` in the screensaver's package | Its installed version is kept machine-wide (`CaptionsVersion`), so a failed update is tried again. Needs photo-stamp-server to know the app |

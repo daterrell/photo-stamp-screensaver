@@ -14,6 +14,8 @@ use sha2::{Digest, Sha256};
 
 use crate::places::Towns;
 use crate::server::Client;
+#[cfg(test)]
+use crate::server::{CAPTIONS, SCREENSAVER};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
@@ -71,22 +73,27 @@ pub fn tidy(target: &Path) {
     let _ = std::fs::remove_file(with_suffix(target, ".new"));
 }
 
-/// Updates the program at `target` (running as `current`) to the newest build on `channel`.
+/// The `app` a download path is for (`/v1/client/download/0.2.0?app=screensaver`).
+fn app_of(path: &str) -> Option<&str> {
+    path.split_once('?')?.1.split('&').find_map(|kv| kv.strip_prefix("app="))
+}
+
+/// Updates the program at `target` (`app`'s build `current`) to the newest build on `channel`.
 pub fn update_program(
     client: &Client,
+    app: &str,
     channel: &str,
     current: &str,
     target: &Path,
 ) -> Result<Outcome, String> {
-    let Some(latest) = client.latest(channel).map_err(|e| e.to_string())? else {
+    let Some(latest) = client.latest(app, channel).map_err(|e| e.to_string())? else {
         return Ok(Outcome::NothingPublished);
     };
     // A server from before screensaver updates ignores `app` and offers photo-stamp's own builds.
-    if !latest.path.contains("app=screensaver") {
-        return Err(
-            "the place server doesn't offer screensaver updates yet (it needs a newer photo-stamp-server)"
-                .into(),
-        );
+    if app_of(&latest.path) != Some(app) {
+        return Err(format!(
+            "the place server doesn't offer {app} updates yet (it needs a newer photo-stamp-server)"
+        ));
     }
     if !newer(&latest.version, current) {
         return Ok(Outcome::UpToDate);
@@ -181,7 +188,7 @@ mod tests {
                 return (401, Vec::new());
             }
             match target {
-                "GET /v1/client/latest?app=screensaver&channel=stable" => {
+                p if p.starts_with("GET /v1/client/latest?") && p.ends_with("&channel=stable") => {
                     let reply = format!(r#"{{"version":"0.2.0","sha256":"{sha}","path":"{path}"}}"#);
                     (200, reply.into_bytes())
                 }
@@ -205,13 +212,25 @@ mod tests {
         std::fs::write(&target, b"0.1.0").unwrap();
         let url = update_server(b"MZ build 0.2.0", sha256_hex(b"MZ build 0.2.0"), "2000-01-01");
         let client = Client::new(&url, "k", Duration::from_secs(5));
-        assert_eq!(update_program(&client, "stable", "0.1.0", &target), Ok(Outcome::Updated("0.2.0".into())));
+        assert_eq!(
+            update_program(&client, SCREENSAVER, "stable", "0.1.0", &target),
+            Ok(Outcome::Updated("0.2.0".into()))
+        );
         assert_eq!(std::fs::read(&target).unwrap(), b"MZ build 0.2.0");
-        assert_eq!(update_program(&client, "stable", "0.2.0", &target), Ok(Outcome::UpToDate));
-        assert_eq!(update_program(&client, "beta", "0.2.0", &target), Ok(Outcome::NothingPublished));
+        assert_eq!(update_program(&client, SCREENSAVER, "stable", "0.2.0", &target), Ok(Outcome::UpToDate));
+        assert_eq!(
+            update_program(&client, SCREENSAVER, "beta", "0.2.0", &target),
+            Ok(Outcome::NothingPublished)
+        );
         assert!(
-            update_program(&Client::new(&url, "wrong", Duration::from_secs(5)), "stable", "0.1.0", &target)
-                .is_err()
+            update_program(
+                &Client::new(&url, "wrong", Duration::from_secs(5)),
+                SCREENSAVER,
+                "stable",
+                "0.1.0",
+                &target
+            )
+            .is_err()
         );
     }
 
@@ -222,13 +241,13 @@ mod tests {
         std::fs::write(&target, b"0.1.0").unwrap();
         let url = update_server(b"MZ build 0.2.0", sha256_hex(b"something else"), "2000-01-01");
         let client = Client::new(&url, "k", Duration::from_secs(5));
-        let err = update_program(&client, "stable", "0.1.0", &target).unwrap_err();
+        let err = update_program(&client, SCREENSAVER, "stable", "0.1.0", &target).unwrap_err();
         assert!(err.contains("damaged"), "{err}");
         assert_eq!(std::fs::read(&target).unwrap(), b"0.1.0");
         // Something that isn't a program, even if the server vouches for it.
         let url = update_server(b"PK zip", sha256_hex(b"PK zip"), "2000-01-01");
         let client = Client::new(&url, "k", Duration::from_secs(5));
-        let err = update_program(&client, "stable", "0.1.0", &target).unwrap_err();
+        let err = update_program(&client, SCREENSAVER, "stable", "0.1.0", &target).unwrap_err();
         assert!(err.contains("isn't a Windows program"), "{err}");
         assert_eq!(std::fs::read(&target).unwrap(), b"0.1.0");
     }
@@ -241,9 +260,39 @@ mod tests {
         let body = b"MZ photo-stamp";
         let url = server_announcing(body, sha256_hex(body), "2000-01-01", "/v1/client/download/0.2.0");
         let client = Client::new(&url, "k", Duration::from_secs(5));
-        let err = update_program(&client, "stable", "0.1.0", &target).unwrap_err();
+        let err = update_program(&client, SCREENSAVER, "stable", "0.1.0", &target).unwrap_err();
         assert!(err.contains("doesn't offer screensaver updates"), "{err}");
         assert_eq!(std::fs::read(&target).unwrap(), b"0.1.0");
+    }
+
+    #[test]
+    fn the_caption_editor_takes_only_its_own_builds() {
+        let dir = temp("captions");
+        let target = dir.join("photo-stamp-captions.exe");
+        std::fs::write(&target, b"0.1.0").unwrap();
+        let body = b"MZ captions 0.2.0";
+        // The screensaver's build offered for the editor: refused.
+        let url = server_announcing(
+            body,
+            sha256_hex(body),
+            "2000-01-01",
+            "/v1/client/download/0.2.0?app=screensaver",
+        );
+        let client = Client::new(&url, "k", Duration::from_secs(5));
+        let err = update_program(&client, CAPTIONS, "stable", "0.1.0", &target).unwrap_err();
+        assert!(err.contains("doesn't offer screensaver-captions updates"), "{err}");
+        let url = server_announcing(
+            body,
+            sha256_hex(body),
+            "2000-01-01",
+            "/v1/client/download/0.2.0?app=screensaver-captions",
+        );
+        let client = Client::new(&url, "k", Duration::from_secs(5));
+        assert_eq!(
+            update_program(&client, CAPTIONS, "stable", "0.1.0", &target),
+            Ok(Outcome::Updated("0.2.0".into()))
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), body);
     }
 
     #[test]

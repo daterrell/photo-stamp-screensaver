@@ -12,11 +12,11 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND as WinHwnd;
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_BITMAP_PROPERTIES1, D2D1_DRAW_TEXT_OPTIONS_NONE,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES,
+    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES,
     D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, D2D1_INTERPOLATION_MODE_LINEAR,
     D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
     D2D1_RENDER_TARGET_USAGE_NONE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1,
@@ -24,9 +24,8 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
-    DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteTextLayout,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWriteCreateFactory, IDWriteFactory, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -45,10 +44,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_SETCURSOR, WM_SYSKEYDOWN, WNDCLASSW, WS_CHILD, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
-use super::decode::{Decoded, Decoder, Pixels};
+use super::decode::{Decoded, Decoder};
+use super::draw::{self, color, upload};
 use super::{store, wide};
 use crate::library::Library;
-use crate::settings::{Caption, Corner, Settings};
+use crate::settings::{Caption, Settings};
 use crate::slide::{self, Motion};
 
 /// How far the mouse may drift (a desk bump) before the screensaver closes, in pixels.
@@ -123,7 +123,7 @@ pub fn data_dir() -> PathBuf {
 }
 
 /// photo-stamp's towns database, installed beside the uninstaller.
-fn towns_path() -> Option<PathBuf> {
+pub(super) fn towns_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("PSS_TOWNS") {
         return Some(p.into());
     }
@@ -238,10 +238,6 @@ struct Saver {
     screens: Vec<Screen>,
     status: Status,
     rng: fastrand::Rng,
-}
-
-fn color(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
-    D2D1_COLOR_F { r, g, b, a }
 }
 
 fn show(ex_style: u32, style: u32, (x, y, w, h): (i32, i32, i32, i32), parent: HWND, rects: Vec<RECT>) {
@@ -497,7 +493,7 @@ impl Saver {
         let caption = if caption.is_empty() || self.settings.caption == Caption::Hidden {
             None
         } else {
-            Some(self.caption_layout(&caption, screen)?)
+            Some(draw::caption_layout(&self.dwrite, &caption, screen, self.settings.corner)?)
         };
         Ok(Shown {
             bitmap,
@@ -507,44 +503,6 @@ impl Saver {
             caption,
             since: now,
         })
-    }
-
-    /// The caption laid out for this screen, and where it goes.
-    fn caption_layout(
-        &self,
-        lines: &[String],
-        screen: (u32, u32),
-    ) -> windows::core::Result<(IDWriteTextLayout, (f32, f32))> {
-        let short = screen.0.min(screen.1) as f32;
-        let margin = short * 0.04;
-        let text: Vec<u16> = lines.join("\n").encode_utf16().collect();
-        unsafe {
-            let format = self.dwrite.CreateTextFormat(
-                w!("Segoe UI"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                caption_font(screen),
-                w!("en-us"),
-            )?;
-            format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
-            let right = matches!(self.settings.corner, Corner::BottomRight | Corner::TopRight);
-            format.SetTextAlignment(if right {
-                DWRITE_TEXT_ALIGNMENT_TRAILING
-            } else {
-                DWRITE_TEXT_ALIGNMENT_LEADING
-            })?;
-            let layout =
-                self.dwrite.CreateTextLayout(&text, &format, screen.0 as f32 * 0.6, screen.1 as f32)?;
-            let mut metrics = DWRITE_TEXT_METRICS::default();
-            layout.GetMetrics(&mut metrics)?;
-            // Shrink the box to the text, so right-aligned lines end at the margin.
-            layout.SetMaxWidth(metrics.width)?;
-            let origin =
-                slide::caption_origin(self.settings.corner, (metrics.width, metrics.height), screen, margin);
-            Ok((layout, origin))
-        }
     }
 
     /// `alpha`: the photo's opacity; `caption`: its caption's, during a crossfade.
@@ -576,7 +534,15 @@ impl Saver {
                 let opacity = caption
                     * slide::caption_opacity(self.settings.caption, now - shown.since, self.seconds());
                 if opacity > 0.0 {
-                    draw_caption(t, layout, *origin, opacity, caption_font(screen));
+                    draw::caption(
+                        &t.dc,
+                        &t.white,
+                        &t.black,
+                        layout,
+                        *origin,
+                        opacity,
+                        draw::caption_font(screen),
+                    );
                 }
             }
         }
@@ -610,58 +576,6 @@ impl Saver {
             let at = Vector2 { X: screen.0 as f32 * 0.1, Y: 0.0 };
             t.dc.DrawTextLayout(at, &layout, &t.white, D2D1_DRAW_TEXT_OPTIONS_NONE);
         }
-    }
-}
-
-/// The caption's text size: as photo-stamp sizes its caption, a little smaller for a screen seen
-/// from afar.
-fn caption_font(screen: (u32, u32)) -> f32 {
-    (screen.0.min(screen.1) as f32 * 0.032).max(9.0)
-}
-
-/// White text with a dark outline and a soft shadow, like photo-stamp's, so it reads on skies, snow
-/// and night shots alike.
-unsafe fn draw_caption(t: &Target, layout: &IDWriteTextLayout, (x, y): (f32, f32), opacity: f32, font: f32) {
-    let outline = (font * 0.07).max(1.0);
-    let shadow = font * 0.09;
-    unsafe {
-        t.black.SetOpacity(opacity * 0.35);
-        for (dx, dy) in [(shadow, shadow), (shadow * 0.6, shadow * 1.2)] {
-            t.dc.DrawTextLayout(
-                Vector2 { X: x + dx, Y: y + dy },
-                layout,
-                &t.black,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
-            );
-        }
-        t.black.SetOpacity(opacity * 0.8);
-        for i in 0..8 {
-            let a = i as f32 * std::f32::consts::FRAC_PI_4;
-            let at = Vector2 { X: x + a.cos() * outline, Y: y + a.sin() * outline };
-            t.dc.DrawTextLayout(at, layout, &t.black, D2D1_DRAW_TEXT_OPTIONS_NONE);
-        }
-        t.white.SetOpacity(opacity);
-        t.dc.DrawTextLayout(Vector2 { X: x, Y: y }, layout, &t.white, D2D1_DRAW_TEXT_OPTIONS_NONE);
-    }
-}
-
-fn upload(dc: &ID2D1DeviceContext, pixels: &Pixels) -> windows::core::Result<ID2D1Bitmap1> {
-    let props = D2D1_BITMAP_PROPERTIES1 {
-        pixelFormat: D2D1_PIXEL_FORMAT {
-            format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-        },
-        dpiX: 96.0,
-        dpiY: 96.0,
-        ..Default::default()
-    };
-    unsafe {
-        dc.CreateBitmap(
-            D2D_SIZE_U { width: pixels.width, height: pixels.height },
-            Some(pixels.bgra.as_ptr().cast()),
-            pixels.width * 4,
-            &props,
-        )
     }
 }
 

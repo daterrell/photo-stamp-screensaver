@@ -70,7 +70,7 @@ jobs:
         run: cargo clippy --target x86_64-pc-windows-gnu --all-targets --locked -- -D warnings
       # The static libde265/libheif build takes ~10 minutes; the runner's persistent layer cache
       # (shared with photo-stamp's identical stages) skips it.
-      - name: Build the .scr
+      - name: Build the .scr and the caption editor
         run: |
           docker build -f docker/Dockerfile.windows --target scr -o type=local,dest=build-out \
             --build-arg PSS_VERSION="$(scripts/version.sh)" .
@@ -78,19 +78,21 @@ jobs:
         run: scripts/build-windows.sh
         env:
           PSS_SCR: build-out/photo-stamp-screensaver.scr
+          PSS_CAPTIONS: build-out/photo-stamp-captions.exe
           # photo-stamp-places' towns database is a package; the automatic token can't read it.
           TOKEN: ${{ secrets.PACKAGES_TOKEN }}
-      - name: Check the .scr
+      - name: Check the programs
         run: |
-          scr=dist/photo-stamp-screensaver.scr
-          x86_64-w64-mingw32-objdump -p "$scr" | grep "DLL Name" | sort -uf | tee dlls.txt
-          if grep -iE "libgcc|libstdc|libwinpthread|libheif|libde265" dlls.txt; then
-            echo "::error::the screensaver depends on non-system DLLs"
-            exit 1
-          fi
-          # The name, icon, manifest and settings dialog (assets/screensaver.rc) are linked in.
-          x86_64-w64-mingw32-objdump -h "$scr" | grep -q "\.rsrc" \
-            || { echo "::error::the screensaver has no resources (settings dialog, name, icon)"; exit 1; }
+          for exe in dist/photo-stamp-screensaver.scr dist/photo-stamp-captions.exe; do
+            x86_64-w64-mingw32-objdump -p "$exe" | grep "DLL Name" | sort -uf | tee dlls.txt
+            if grep -iE "libgcc|libstdc|libwinpthread|libheif|libde265" dlls.txt; then
+              echo "::error::$exe depends on non-system DLLs"
+              exit 1
+            fi
+            # The name, icon, manifest (and the settings dialog: assets/*.rc) are linked in.
+            x86_64-w64-mingw32-objdump -h "$exe" | grep -q "\.rsrc" \
+              || { echo "::error::$exe has no resources (name, icon, manifest)"; exit 1; }
+          done
           test -s dist/photo-stamp-screensaver-setup.exe
       # Pull requests: short-lived artifacts to try the build. Main and tags: published below.
       # Forgejo's fork: GitHub's upload-artifact v4+ doesn't work against Forgejo.
@@ -101,9 +103,11 @@ jobs:
           path: |
             dist/photo-stamp-screensaver-setup.exe
             dist/photo-stamp-screensaver.scr
+            dist/photo-stamp-captions.exe
           if-no-files-found: error
           retention-days: 3
-      # Main = beta, v* tags = stable (the version says which). The .scr alone is for auto-update.
+      # Main = beta, v* tags = stable (the version says which). The .scr and the caption editor alone
+      # are for auto-update.
       # The automatic token can't push packages.
       - name: Publish to the package registry
         if: github.event_name == 'push'
@@ -115,6 +119,8 @@ jobs:
           base="${{ github.server_url }}/api/packages/${{ github.repository_owner }}/generic/$PACKAGE/$v"
           curl -sf -X PUT -H "Authorization: token $TOKEN" --upload-file dist/photo-stamp-screensaver.scr \
             "$base/photo-stamp-screensaver-$v.scr" || { echo "::error::couldn't publish $version"; exit 1; }
+          curl -sf -X PUT -H "Authorization: token $TOKEN" --upload-file dist/photo-stamp-captions.exe \
+            "$base/photo-stamp-captions-$v.exe" || { echo "::error::couldn't publish the caption editor for $version"; exit 1; }
           curl -sf -X PUT -H "Authorization: token $TOKEN" --upload-file dist/photo-stamp-screensaver-setup.exe \
             "$base/photo-stamp-screensaver-setup-$v.exe" || { echo "::error::couldn't publish the setup for $version"; exit 1; }
           echo "published $PACKAGE $version"

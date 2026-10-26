@@ -94,6 +94,16 @@ pub fn forget_machine() {
     unsafe { RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.as_ptr()) };
 }
 
+/// The caption editor's installed version (setup's, or the last update's); it's built with the
+/// screensaver but updated on its own, so it may lag behind after a failed update.
+pub fn captions_version() -> Option<String> {
+    MACHINE.string("CaptionsVersion")
+}
+
+pub fn set_captions_version(version: &str) -> io::Result<()> {
+    MACHINE.set_string("CaptionsVersion", version)
+}
+
 /// What the updater last did ("Up to date, checked 2026-10-21 14:00"), for the settings dialog.
 pub fn last_update_check() -> Option<String> {
     MACHINE.string("LastCheck")

@@ -33,13 +33,35 @@ registry as `photo-stamp-screensaver-windows` (the newest 10 betas are kept). To
   photo-stamp's towns database, installed with the screensaver) is shown, and the server is asked again next
   time.
 
+### Changing a caption
+
+**Photo Stamp captions** (on the desktop and in the Start menu) changes what a photo's caption says:
+the place is wrong or too vague, the photo has no GPS or date, or you'd rather it said "Grandma's
+garden".
+
+- It opens on the screensaver's folder, its photos as thumbnails. **Choose a folder...** shows
+  another, and photos (or folders of them) dragged onto the window, or onto its shortcut, are shown
+  instead.
+- The chosen photo is shown with its caption as the screensaver draws it. Underneath, the caption's
+  lines can be rewritten, one line per row, and the picture follows as you type. **Save** (or
+  Ctrl+S) keeps it; **Back to automatic** goes back to the caption worked out from the photo.
+  Emptying the box and saving means no caption for that photo at all. Moving to another photo with
+  changes not saved asks first. Photos with a changed caption have ✎ before their name.
+- A changed caption is kept in two places: **in the photo** (JPEG and PNG: an XMP property,
+  `pss:Caption`, beside the photo's other metadata, which is left alone, as is its modified time),
+  so it goes wherever the photo goes; and **in the folder's cache** (below), so every PC showing the
+  folder has it, whatever kind of photo it is. HEIC, WebP, TIFF and other photos keep it in the
+  cache only. For a photo outside any screensaver folder, only the photo itself can keep it.
+- The screensaver shows the cache's caption first, then the photo's, then the automatic one.
+  Photos photo-stamp already stamped can't be changed (their caption is part of the picture).
+
 ### The cache in the photo folder
 
 What the screensaver learns is kept beside the photos in a hidden `.photo-stamp-screensaver.sqlite`: each photo's
-date and position, and the server's answers. Every PC showing the folder shares it, so a spot is looked up once
+date and position, the server's answers, and captions changed by hand. Every PC showing the folder shares it, so a spot is looked up once
 for the whole family. The photos themselves are never changed. If the folder can't be written (read-only, or the
 file is locked), a per-PC copy in `%LOCALAPPDATA%\photo-stamp-screensaver\` is used instead. Deleting the file is
-harmless; it fills in again.
+harmless; it fills in again (captions changed by hand stay in JPEG and PNG photos, but other photos lose them).
 
 Where the slideshow got to (shuffled photos already shown, or the last one in order) is kept per PC in
 `%LOCALAPPDATA%\photo-stamp-screensaver\state.sqlite`, with a log, `screensaver.log`, beside it.
@@ -49,10 +71,11 @@ Where the slideshow got to (shuffled photos already shown, or the last one in or
 Run `photo-stamp-screensaver-setup.exe`. Windows asks for permission, because screensavers are installed for
 everyone on the PC (into `System32`, the only place Screen Saver Settings lists them from). Setup:
 
-- copies `photo-stamp-screensaver.scr` into `C:\Windows\System32`, and the towns database into
-  `C:\Program Files\Photo Stamp Screensaver`;
+- copies `photo-stamp-screensaver.scr` into `C:\Windows\System32`, and the caption editor
+  (`photo-stamp-captions.exe`) and the towns database into `C:\Program Files\Photo Stamp Screensaver`;
 - makes it the screensaver of whoever ran setup;
-- adds **Photo Stamp screensaver settings** to the Start menu;
+- adds **Photo Stamp screensaver settings** to the Start menu, and **Photo Stamp captions** to the Start menu
+  and the desktop;
 - opens Screen Saver Settings, where **Settings...** opens the screensaver's settings. "Wait N minutes" there
   sets when it starts, as for any screensaver.
 
@@ -67,8 +90,8 @@ builds CI publishes (`photo-stamp-screensaver-windows`; photo-stamp-server's `/v
 - A scheduled task, **Photo Stamp Screensaver update**, runs `photo-stamp-screensaver.scr /update` as SYSTEM every
   day (at a random time between 10:00 and 14:00, or at the next chance) and 15 minutes after startup. It installs
   a newer build on the chosen channel (Settings > Updates: releases only, or every build), checked against the
-  server's SHA-256, beside the running one (the old file is removed next time). It also fetches a newer towns
-  database when the server has one. It logs to `C:\ProgramData\Photo Stamp Screensaver\update.log`, and the
+  server's SHA-256, beside the running one (the old file is removed next time). It updates the caption editor
+  the same way (`app=screensaver-captions`), and fetches a newer towns database when the server has one. It logs to `C:\ProgramData\Photo Stamp Screensaver\update.log`, and the
   settings dialog shows the last result.
 - The task runs with administrator rights, so the server address and key it uses are kept machine-wide
   (`HKLM\Software\Photo Stamp Screensaver\Updates`, the key encrypted for the PC), where only an administrator
@@ -98,7 +121,7 @@ the device key there is encrypted for that Windows user (DPAPI).
 The `.scr` also runs by hand: `photo-stamp-screensaver.scr /s` (screensaver), `/c` (settings),
 `/p <HWND>` (preview), `/w` (the slideshow in an ordinary window that input doesn't close, for trying it out).
 For tests, `PSS_FOLDER` shows another folder than the settings', `PSS_DATA_DIR` moves the per-PC files and
-`PSS_TOWNS` the towns database.
+`PSS_TOWNS` the towns database; the caption editor takes the same (it logs to `captions.log` in the data folder).
 
 ## Build
 
@@ -106,12 +129,13 @@ For tests, `PSS_FOLDER` shows another folder than the settings', `PSS_DATA_DIR` 
 cargo test                   # Linux: everything but the drawing (EXIF, captions, caches, order, lookups)
 cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings
 cargo run --example info -- photos/*.jpg      # what the screensaver reads from photos
-scripts/build-windows.sh     # dist/photo-stamp-screensaver.scr, towns.sqlite and the setup
+scripts/build-windows.sh     # dist/photo-stamp-screensaver.scr, photo-stamp-captions.exe, towns.sqlite and the setup
 ```
 
 The checks need Rust with the `x86_64-pc-windows-gnu` target and mingw-w64 (`gcc`, `windres`). The real build
 needs only Docker: `docker/Dockerfile.windows` cross-compiles libde265 and libheif as static libraries (the same
-stages as photo-stamp's, so the slow part is shared) and builds the `.scr` with `--features heif`. The towns
+stages as photo-stamp's, so the slow part is shared) and builds the `.scr` and the caption editor with
+`--features heif`. The towns
 database is the newest one [dave/photo-stamp-places](https://forgejo.terrell.ltd/dave/photo-stamp-places)
 publishes, downloaded with `scripts/fetch-places.sh`, which needs a Forgejo token that can read packages (`$TOKEN`
 or `~/.config/forgejo/token`). `makensis` is used if it's installed, otherwise through Docker. Versions come from
@@ -124,16 +148,21 @@ git tags (`scripts/version.sh`), as in photo-stamp.
 | `src/server.rs`       | Talking to the place server (`/v1/me`, `/v1/place`)                     |
 | `src/places.rs`       | photo-stamp's place types (its `proto` crate) and naming from towns alone |
 | `src/exif.rs`         | What the caption needs from EXIF (`kamadak-exif`), and photo-stamp's marker |
+| `src/xmp.rs`          | A changed caption kept in the photo: reading and writing `pss:Caption` (`img-parts`, `quick-xml`) |
 | `src/caption.rs`      | The caption's lines, with the local time at the photo's position        |
 | `src/geo.rs`          | Place lookups: the server, remembered answers, the nearest town         |
 | `src/cache.rs`        | The shared cache in the photo folder, and its per-PC fallback          |
 | `src/playlist.rs`     | Finding the photos, the order, and where the slideshow got to          |
-| `src/library.rs`      | Getting the next photo ready: bytes, metadata, caption                  |
+| `src/library.rs`      | Getting the next photo ready: bytes, metadata, caption (changed, or worked out); saving a change |
+| `src/photos.rs`       | The caption editor's photos, and the top folder (and cache) each belongs to |
 | `src/slide.rs`        | Framing, pan/zoom, crossfade and caption timing (arithmetic only)       |
 | `src/update.rs`       | Updates: newer or not, SHA-256, swapping a running file, the towns database |
 | `src/heif.rs`         | HEIC through libheif                                                    |
 | `src/win/decode.rs`   | Decoding for the screen with WIC (and libheif), scaled and turned upright |
 | `src/win/saver.rs`    | The screensaver window, a slideshow per monitor, drawn with Direct2D    |
+| `src/win/draw.rs`     | Direct2D shared by both: photos onto the GPU, the caption's look        |
+| `src/win/captions.rs` | The caption editor's window: thumbnails, preview, drag and drop         |
+| `src/bin/photo-stamp-captions.rs` | The caption editor's program                                |
 | `src/win/dialog.rs`   | The settings dialog (laid out in `assets/screensaver.rc`)               |
 | `src/win/folder.rs`   | The folder picker                                                       |
 | `src/win/store.rs`    | Settings in the registry (per user, and the updater's machine-wide), the keys encrypted |
